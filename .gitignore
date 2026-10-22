@@ -1,0 +1,28 @@
+# 便携版构建产物（含 29MB 运行时，不进仓库；发 Release 时单独上传 zip）
+dist/
+
+# 本地运行数据：设置（含 API Key）、讲义索引、截图、令牌 —— 绝对不能提交
+data/
+*.local.json
+token
+server.json
+
+# 测试与调试的临时目录
+.e2e-tmp/
+.live-tmp/
+.dist-tmp/
+.tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
