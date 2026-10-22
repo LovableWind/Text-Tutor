@@ -6,10 +6,18 @@ from __future__ import annotations
 import re
 
 from handout import clip, key_points, page_text, section_at, toc_lines
+import profiles
 
 EXERCISE_HINTS = re.compile(
     r"(练习|习题|作业|思考题|例题|试证|证明：|证明:|求证|计算|求\s*[a-zA-Zα-ω一-龥]|讨论|判断|"
-    r"化简|解方程|解不等式|判断下列|问：|试求|设.{0,20}求)"
+    r"化简|解方程|解不等式|判断下列|问：|试求|设.{0,20}求|"
+    r"论述|简答|材料分析|案例分析|谈谈|评价一下|比较.{0,10}异同|阅读下列材料)",
+    re.I,
+)
+# 英文课件里的题号：Exercise 3 / Supplement Exercise 2 / Problem 5 / Ex. 4
+EXERCISE_EN = re.compile(
+    r"(?:supplement(?:al)?\s+)?(?:exercise|problem|question|homework|practice|hw|ex\.?)\s*[\d(（]",
+    re.I,
 )
 
 
@@ -19,40 +27,19 @@ def looks_like_exercise(text: str) -> bool:
         return False
     if EXERCISE_HINTS.search(t):
         return True
+    if EXERCISE_EN.search(t):
+        return True
     # a short prompt ending with a question mark and containing math
     if len(t) < 120 and ("?" in t or "？" in t):
         return True
     return False
 
 
-SYSTEM_HEAD = """你是「旁批」，一位坐在学生旁边的数学助教，陪他读一份讲义。
+SYSTEM_HEAD = """你是「旁批」，{role}，陪他读一份讲义。
 
 你的第一原则：**贴着讲义讲**。学生只学过讲义前面已经讲过的内容，你必须在这个范围内解释，不能默认他会任何尚未出现的东西。
 
 【讲义】《{name}》，共 {pages} 页。学生现在读到 第{page}页{section_part}。"""
-
-RULES = r"""
-【硬性规则】
-1. 解释只能使用「已讲范围」（{upto}）里出现过的定义、定理、公式、方法和记号。当前这一页正在学，可以引用，但不要假装它已经"早就学过"。
-2. 如果推导必须用到后面才讲的内容，单独写一行，以 ⏭ 开头，格式：
-   ⏭ 引申 · 第X节《标题》（第Y页）：用一句话说明它是什么、这里为什么需要它。
-   然后继续讲，但**不要展开它的证明**。
-   正文里不许出现大于当前页的页码、也不许出现后面的小节号——包括"第 2 页会讲""1.4 节里有"这类预告。所有对后文的提及都必须放进 ⏭ 行里。
-3. 如果用到讲义里根本没有的东西（课本外的结论、常用不等式、竞赛技巧），单独写一行，以 ➕ 开头：
-   ➕ 补充：先用一两句话说清它是什么、为什么成立或怎么用，再继续。
-   绝不把讲义没写的东西说成"讲义里讲过"。
-4. 不要编造讲义的定理编号、页码、章节名。记不清就不写编号，只描述内容。
-5. 数学表达有硬要求：
-   - 行内 $...$ 只放符号或很短的式子（如 $a_n<2$、$\varepsilon>0$、$f'(x)=0$）。
-   - **推导的关键一步必须单独占一行，用 $$...$$ 展示**：代入、变形、求导、解方程、取极限、定符号、得结论，一步一行。不要把带等号的多步变形塞进一句话里。
-   - 一行只写一个等式或一个结论；不要用分号把两三步串成一行，也不要把 $$...$$ 写在句子中间。
-   - 只用常见 LaTeX：\frac \sqrt \sum \int \lim \to \Rightarrow \left( \right) \begin{cases} \begin{aligned}；需要大号括号时用 \left( ... \right)，不要用 \displaystyle \color \label \tag \overset \underbrace \substack。
-6. 不要复述题目原文，不要写"好的""让我来为你解释"这类开场白。
-7. 篇幅：讲解 300～600 字；提示不超过 150 字。
-8. **讲题时优先用已讲过的方法**。同一道题如果有几种做法，选已讲范围内那一种，哪怕它更笨、更长；后面才讲的更省事的做法（洛必达、中值定理、级数……）只能作为 ⏭ 备注，不能当成主路线。
-9. 讲题时每给出一个方法或一步推导，都要在括号里写清它出自哪里，例如"（第 2 页定理 1.4）""（2.2 节的求导法则，第 3 页）"。提示里也要写，不能只说"用导数做"而不说出处。
-"""
-
 
 def _section_part(handout: dict, page: int) -> str:
     sec = section_at(handout, page)
@@ -73,8 +60,11 @@ def build_system(handout: dict | None, page: int) -> str:
         )
     page = max(1, min(page, handout.get("page_count") or 1))
     upto = page - 1
+    domain = handout.get("domain") or "math"
+    profile = profiles.get_profile(domain)
     parts = [
         SYSTEM_HEAD.format(
+            role=profile["role"],
             name=handout.get("name") or "讲义",
             pages=handout.get("page_count") or "?",
             page=page,
@@ -86,7 +76,7 @@ def build_system(handout: dict | None, page: int) -> str:
     parts.append("\n【目录（页码为 PDF 页码）】\n" + clip(toc, 2200))
 
     if upto > 0:
-        points = key_points(handout["pages"], upto)
+        points = key_points(handout["pages"], upto, domain=domain)
         if points:
             parts.append("\n【已讲范围的关键结论（第 1 页—第 %d 页）】\n%s" % (upto, clip(points, 2600)))
     else:
@@ -105,7 +95,7 @@ def build_system(handout: dict | None, page: int) -> str:
         parts.append("\n【后续目录（只用于第 2 条规则的引用，不算已讲）】\n" + clip(after, 1200))
 
     scope = "第 1 页到第 %d 页" % upto if upto > 0 else "第 1 页之前（即还没有讲过任何内容）"
-    parts.append(RULES.replace("{upto}", scope))
+    parts.append(profile["rules"].replace("{upto}", scope))
     return "\n".join(parts)
 
 
@@ -122,50 +112,29 @@ EXERCISE_TASK = """{subject}
 不要写后续步骤，不要写最终答案。{extra}"""
 
 
-EXPLAIN_TASK = """{subject}
+TRANSLATE_TASK = """{subject}
 
-请按这个结构讲：
-**定位**：一句话说清这段在做什么、属于哪个概念。
-**讲解**：分步骤拆开讲（能分点就分点），把"为什么可以这样"说透；必要的推导一步一步写。
-**依据**：用到的已讲内容，注明位置（如"第 3 页的定义 2.1""第 5 页的单调有界定理"）。
-**易错点**：1～2 条，具体到"哪里容易写错/想偏"，不要泛泛而谈。
-中间如果出现 ⏭ 引申 或 ➕ 补充，单独成行，放在相关步骤后面，不要堆到最后。
-提醒：正文里不要出现当前页之后的页码或小节号；要提后文，一律写进 ⏭ 行。{extra}"""
+学生只要翻译，不要讲解。
 
+把这段内容译成通顺的中文：数学符号、公式、编号保持原样（公式用 $...$ 包住），不要改写题意，也不要补充任何原文没有的信息。
 
-HINT_TASK = """{subject}
-
-他要的是提示，不是答案。
-
-这是第 {level} 层提示（1 最轻，3 最接近完整）：
-- 第 1 层：只指方向——往哪个概念想、该调用哪个已讲结论，不许写出任何关键式子或中间结果。
-- 第 2 层：给出关键的那一步和它依据的已讲定理，停在他能自己往下算的地方。
-- 第 3 层：给出接近完整的路线（分几步、每步做什么），但最后一步和最终答案留白。
-
-每一条提示都必须点明依据在讲义的哪里，写成"（第X页定理 X.X）""（X.X 节的 什么）"这种形式，不能只说"用导数做"。
-路线必须走已讲过的方法；后面才讲的技巧不要出现在提示里。
-
-只输出：
-**提示（第{level}层）**：……
-（如果需要，加一行 **卡点**：他最可能卡在哪里）
-不要写出最终答案，不要用未讲过的内容。
-提醒：正文里不要出现当前页之后的页码或小节号；要提后文，一律写进 ⏭ 行。{extra}"""
-
-
-SOLUTION_TASK = """{subject}
-
-学生看过提示了，现在需要一份完整解答来对照。
-
-按 **思路 → 步骤（1.2.3.）→ 答案** 写。
-**优先用已讲过的方法**：同一道题如果有几种做法，主路线选已讲范围内那一种，哪怕更长更笨；后面才讲的捷径只在 ⏭ 里提一句，不许当主路线。
-每一步后面用括号注明依据的已讲内容（"（第 2 页定理 1.4）"这种粒度），没有依据的步骤说明是计算。
-凡是超纲的步骤必须用 ⏭ 或 ➕ 标出。最后用一行 **回看** 指出这题的关键动作是什么，以及它出自哪一页。
-提醒：正文里不要出现当前页之后的页码或小节号；要提后文，一律写进 ⏭ 行。"""
+硬性要求：
+- 不要解题、不要提示思路、不要给答案、不要补充背景知识。
+- 如果原文本来就是中文，只回一句"原文是中文，无需翻译"，并把原文原样贴回。
+- 如果里面有术语拿不准，在译文后用一行 **术语**：给出"英文 → 中文（可选译法）"。"""
 
 
 IMAGE_NOTE = """
 
 （学生发来的是一张截图，可能是手写或扫描的讲义/题目。请先在心里把图里的内容看清楚：公式、上下标、符号不要认错；如果某处实在模糊，就在回答里说明"图中某处看不清"，不要猜。然后把识别到的关键式子用 $...$ 复述一遍再讲解。）"""
+
+TRANSLATE_NOTE = """
+
+（本次只做翻译：不要讲解、不要提示思路、不要解题、不要补充背景。译文之外最多给一行术语对照。）"""
+
+FORMULA_NOTE = r"""
+
+（注意：学生这段文字是从 PDF 文字层复制来的，而公式的上下标、分式横线、根号、积分上下限在这种复制里几乎一定会丢失或错位——比如 $\int_0^1 x^2\,dx$ 复制出来会变成 "∫x2dx"。如果这个式子的含义不唯一，先用一句话说明"按你贴的这串，它应该是……（并给出你补全后的写法）"，再基于补全后的式子讲；不要拿错版的式子硬推。回答最后提醒一句：框选截图（Win+Shift+S）比直接复制更可靠。）"""
 
 
 def _subject(selection: str, image: bytes | None, kind: str = "这段内容") -> str:
@@ -186,30 +155,117 @@ def build_messages(
     image: bytes | None = None,
     extra_note: str = "",
     exercise: bool = False,
+    formula_suspect: bool = False,
 ) -> tuple[str, list]:
     system = build_system(handout, page)
+    if mode == "translate":
+        system += TRANSLATE_NOTE
     if image:
         system += IMAGE_NOTE
+    elif formula_suspect:
+        system += FORMULA_NOTE
     if extra_note:
         system += "\n\n【补充说明】\n" + extra_note
 
-    extra = ""
-    if handout:
-        extra = "\n（如果需要，可以提一句这段和前后文的联系，但不要跑题。）"
+    domain = (handout or {}).get("domain") or "math"
+    task = _task_text(selection, image, mode, hint_level, exercise, bool(handout), domain)
 
+    content = []
+    if image:
+        content.append({"type": "image", "media_type": "image/png", "data": image})
+    content.append({"type": "text", "text": task})
+    return system, [{"role": "user", "content": content}]
+
+
+def _task_text(selection, image, mode, hint_level, exercise, has_context, domain="math"):
+    extra = ""
+    if has_context:
+        extra = "\n（如果需要，可以提一句这段和前后文的联系，但不要跑题。）"
+    if mode == "translate":
+        return TRANSLATE_TASK.format(subject=_subject(selection, image, "这段内容"))
+    profile = profiles.get_profile(domain)
+    subject = _subject(selection, image, "这道题" if mode in ("hint", "solution") else "这段内容")
     if mode == "hint":
-        task = HINT_TASK.format(
-            subject=_subject(selection, image, "这道题"),
+        return profile["hint"].format(
+            subject=subject,
             level=max(1, min(3, hint_level)),
             extra=extra,
         )
-    elif mode == "solution":
-        task = SOLUTION_TASK.format(subject=_subject(selection, image, "这道题"), extra=extra)
-    elif exercise:
-        task = EXERCISE_TASK.format(subject=_subject(selection, image, "这道题"), extra=extra)
-    else:
-        task = EXPLAIN_TASK.format(subject=_subject(selection, image), extra=extra)
+    if mode == "solution":
+        return profile["solution"].format(subject=subject, extra=extra)
+    # 习题默认不会走到这里（先弹三选一）；用户明确点了「讲解」就是真的要讲
+    return profile["explain"].format(subject=subject, extra=extra)
 
+
+MULTI_HEAD = """你是「旁批」，{role}，陪他读一整套课程课件。
+
+你的第一原则：**贴着课件讲**。学生只学过「已讲范围」里出现过的内容，你必须在这个范围内解释，不能默认他会任何尚未出现的东西。
+
+【课程】共 {doc_total} 份课件，当前是第 {doc_no} 份《{name}》，第 {page}/{page_count} 页{section_part}。"""
+
+MULTI_EXTRA = """
+
+（本课程有多份课件：已经讲过的包括前面各讲的全部内容和本讲前面的页。引用后面才讲的内容时，⏭ 行要写清讲次和页码，例如「⏭ 引申 · 第3讲《导数与微分》2.2 节（该讲第4页）」；不然后文的页码会产生歧义。）"""
+
+
+def build_system_multi(ctx: dict) -> str:
+    """System prompt for a multi-deck corpus (ctx comes from corpus.context())."""
+    section_part = "（%s）" % ctx["section"] if ctx.get("section") else ""
+    domain = ctx.get("domain") or "math"
+    profile = profiles.get_profile(domain)
+    parts = [MULTI_HEAD.format(
+        role=profile["role"],
+        doc_total=ctx.get("doc_total") or 1,
+        doc_no=(ctx.get("doc_index") or 0) + 1,
+        name=ctx.get("name") or "课件",
+        page=ctx.get("page") or 1,
+        page_count=ctx.get("page_count") or 1,
+        section_part=section_part,
+    )]
+
+    if ctx.get("structure"):
+        parts.append("\n【课程结构（按授课顺序）】\n" + ctx["structure"])
+
+    parts.append("\n【已讲范围】" + (ctx.get("covered_label") or ""))
+
+    if ctx.get("covered"):
+        parts.append("\n【前面讲过什么】\n" + ctx["covered"])
+
+    if ctx.get("prev"):
+        parts.append("\n【本讲上一页原文（节选）】\n" + ctx["prev"])
+
+    if ctx.get("current"):
+        parts.append("\n【当前页原文（节选）】\n" + ctx["current"])
+
+    if ctx.get("ahead"):
+        parts.append("\n【后面会讲（只用于 ⏭ 引用，不算已讲）】\n" + ctx["ahead"])
+
+    parts.append(profile["rules"].replace("{upto}", ctx.get("covered_label") or ""))
+    parts.append(MULTI_EXTRA)
+    return "\n".join(parts)
+
+
+def build_messages_multi(
+    ctx: dict,
+    selection: str,
+    mode: str = "explain",
+    hint_level: int = 1,
+    image: bytes | None = None,
+    extra_note: str = "",
+    exercise: bool = False,
+    formula_suspect: bool = False,
+) -> tuple[str, list]:
+    system = build_system_multi(ctx)
+    if mode == "translate":
+        system += TRANSLATE_NOTE
+    if image:
+        system += IMAGE_NOTE
+    elif formula_suspect:
+        system += FORMULA_NOTE
+    if extra_note:
+        system += "\n\n【补充说明】\n" + extra_note
+
+    task = _task_text(selection, image, mode, hint_level, exercise, True, ctx.get("domain") or "math")
     content = []
     if image:
         content.append({"type": "image", "media_type": "image/png", "data": image})

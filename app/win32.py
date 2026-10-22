@@ -390,6 +390,15 @@ def _window_texts():
     return out
 
 
+def has_window(title_part: str) -> bool:
+    if not IS_WINDOWS:
+        return False
+    try:
+        return any(title_part in title for _hwnd, title in _window_texts())
+    except Exception:
+        return False
+
+
 def pin_topmost(title_part: str, topmost: bool = True) -> bool:
     if not IS_WINDOWS:
         return False
@@ -450,6 +459,8 @@ def open_app_window(url: str, profile_dir: str, width=440, height=980, x=None, y
         "--disable-features=Translate,MediaRouter",
         "--disable-extensions",
         "--disable-background-networking",
+        "--disable-background-mode",
+        "--no-default-browser-check",
     ]
     if x is not None:
         args.append("--window-position=%d,%d" % (x, y))

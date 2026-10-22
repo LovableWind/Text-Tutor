@@ -28,12 +28,14 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import handout as handout_mod  # noqa: E402
+import corpus as corpus_mod  # noqa: E402
+import formula  # noqa: E402
 import guard  # noqa: E402
 import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -80,13 +82,16 @@ class Store:
         self.settings_path = os.path.join(root, "settings.json")
         self.handout_path = os.path.join(root, "handout.json")
         self.cards_path = os.path.join(root, "cards.json")
+        self.corpus_path = os.path.join(root, "corpus.json")
         self.img_dir = os.path.join(root, "img")
         os.makedirs(self.img_dir, exist_ok=True)
         self.lock = threading.RLock()
         self.settings = self._load_settings()
         self.handout = handout_mod.load_handout(self.handout_path)
+        self.corpus = corpus_mod.load(self.corpus_path) or corpus_mod.new_corpus()
         self.cards = self._load_cards()
         self.page = int(self.settings.get("page") or 1)
+        self.doc = int(self.settings.get("doc") or 0)
         self.handout_status = {"state": "ready" if self.handout else "none", "progress": 0, "message": ""}
 
     # -- settings ---------------------------------------------------------
@@ -130,6 +135,10 @@ class Store:
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(self.cards[-120:], fh, ensure_ascii=False)
             os.replace(tmp, self.cards_path)
+
+    def save_corpus(self):
+        with self.lock:
+            corpus_mod.save(self.corpus, self.corpus_path)
 
     def add_card(self, card: dict) -> dict:
         with self.lock:
@@ -234,6 +243,7 @@ class App:
         self.port = 0
         self.started = time.time()
         self.last_ping = time.time()
+        self.exit_at = 0.0
         self.window_opened = False
         self.suppress_until = 0.0
         self._parse_thread = None
@@ -369,6 +379,26 @@ class App:
         self._parse_thread.start()
         return True
 
+    def has_corpus(self) -> bool:
+        return bool(self.store.corpus.get("docs"))
+
+    def corpus_summary(self) -> dict:
+        docs = self.store.corpus.get("docs") or []
+        if not docs:
+            return {"ready": False, "docs": [], "position": {"doc": 0, "page": 1}, "total_pages": 0}
+        doc_idx = max(0, min(self.store.doc, len(docs) - 1))
+        page = max(1, min(self.store.page, corpus_mod.page_count(docs[doc_idx]) or 1))
+        summary = corpus_mod.summary(self.store.corpus, doc_idx, page)
+        summary["ready"] = True
+        summary["current"] = {
+            "doc": doc_idx,
+            "page": page,
+            "name": docs[doc_idx]["name"],
+            "pages": corpus_mod.page_count(docs[doc_idx]),
+            "section": (corpus_mod.section_at(docs[doc_idx], page) or {}).get("title") or "",
+        }
+        return summary
+
     def handout_summary(self) -> dict:
         h = self.store.handout
         if not h:
@@ -476,6 +506,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._serve_static(self.path_only[len("/static/"):])
             if self.path_only in ("/", "/index.html"):
                 return self._serve_static("index.html")
+            if self.path_only == "/guide":
+                return self._serve_guide()
             if self.path_only == "/favicon.ico":
                 return self._serve_static("favicon.svg")
             if not self.path_only.startswith("/api/"):
@@ -489,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_state()
             if self.path_only == "/api/events":
                 return self._handle_events()
+            if self.path_only == "/api/corpus":
+                return self._send_json(self.app.corpus_summary())
             if self.path_only == "/api/handout/status":
                 return self._send_json(self.app.store.handout_status)
             if self.path_only == "/api/handout/outline":
@@ -530,6 +564,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_page()
             if route == "/api/handout":
                 return self._handle_handout_upload()
+            if route == "/api/session/reset":
+                return self._handle_session_reset()
+            if route == "/api/corpus/add":
+                return self._handle_corpus_add()
+            if route == "/api/corpus/reorder":
+                return self._handle_corpus_reorder()
+            if route == "/api/corpus/delete":
+                return self._handle_corpus_delete()
+            if route == "/api/corpus/position":
+                return self._handle_corpus_position()
             if route == "/api/explain":
                 return self._handle_explain()
             if route == "/api/chat":
@@ -562,6 +606,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json({"ok": True, "kind": grabbed.get("kind")})
             if route == "/api/ping":
                 self.app.last_ping = time.time()
+                self.app.exit_at = 0.0
+                return self._send_json({"ok": True})
+            if route == "/api/goodbye":
+                self.app.exit_at = time.time() + 8.0
                 return self._send_json({"ok": True})
             if route == "/api/pin":
                 ok = win32.pin_topmost(APP_TITLE, True)
@@ -607,7 +655,52 @@ class Handler(BaseHTTPRequestHandler):
             ctype += "; charset=utf-8"
         with open(path, "rb") as fh:
             data = fh.read()
-        self._send_bytes(data, ctype, cache=not path.endswith("index.html"))
+        # 只缓存图片；html/js/css 一律不缓存，避免“新 JS 配旧 HTML”这种半更新状态
+        cacheable = path.endswith((".svg", ".png", ".ico", ".woff2"))
+        self._send_bytes(data, ctype, cache=cacheable)
+
+    def _serve_guide(self):
+        path = os.path.join(ROOT, "使用说明.md")
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            text = "使用说明.md 不存在（便携包里应该有这个文件）。"
+        import html as _html
+
+        body = _html.escape(text)
+        page = (
+            "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            "<title>旁批 · 使用说明</title><style>"
+            "body{margin:0;background:#141518;color:#e9e7e2;"
+            "font:15px/1.85 -apple-system,'Segoe UI','Microsoft YaHei',sans-serif}"
+            ".wrap{max-width:760px;margin:0 auto;padding:36px 28px 80px}"
+            "pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;margin:0}"
+            "a{color:#d99a5b}"
+            "</style></head><body><div class=\"wrap\"><pre>" + body + "</pre></div></body></html>"
+        )
+        return self._send_bytes(page.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _handle_session_reset(self):
+        app = self.app
+        with app.store.lock:
+            app.store.corpus = corpus_mod.new_corpus()
+            app.store.handout = None
+            app.store.doc = 0
+            app.store.page = 1
+            app.store.settings["doc"] = 0
+            app.store.settings["page"] = 1
+        app.store.save_corpus()
+        app.store.save_settings()
+        try:
+            os.remove(app.store.handout_path)
+        except OSError:
+            pass
+        return self._send_json({
+            "ok": True,
+            "corpus": app.corpus_summary(),
+            "handout": app.handout_summary(),
+        })
 
     def _handle_state(self):
         app = self.app
@@ -616,6 +709,7 @@ class Handler(BaseHTTPRequestHandler):
             "version": VERSION,
             "settings": app.store.public_settings(),
             "handout": app.handout_summary(),
+            "corpus": app.corpus_summary(),
             "page": app.store.page,
             "section": handout_mod.section_at(h, app.store.page) if h else None,
             "cards": app.store.cards[-40:],
@@ -662,6 +756,18 @@ class Handler(BaseHTTPRequestHandler):
             page = int(payload.get("page") or 1)
         except Exception:
             page = 1
+        if self.app.has_corpus():
+            docs = self.app.store.corpus["docs"]
+            doc_idx = int(payload.get("doc", self.app.store.doc) or 0)
+            doc_idx = max(0, min(doc_idx, len(docs) - 1))
+            page = max(1, min(page, corpus_mod.page_count(docs[doc_idx]) or 1))
+            self.app.store.doc, self.app.store.page = doc_idx, page
+            self.app.store.settings["doc"] = doc_idx
+            self.app.store.settings["page"] = page
+            self.app.store.save_settings()
+            section = corpus_mod.section_at(docs[doc_idx], page)
+            return self._send_json({"ok": True, "page": page, "doc": doc_idx, "section": section,
+                                    "corpus": self.app.corpus_summary()})
         h = self.app.store.handout or {}
         if h:
             page = max(1, min(page, h.get("page_count") or 1))
@@ -672,6 +778,80 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.save_settings()
         section = handout_mod.section_at(h, page) if h else None
         self._send_json({"ok": True, "page": page, "section": section})
+
+    def _handle_corpus_add(self):
+        from urllib.parse import unquote
+
+        name = unquote(self.headers.get("X-Filename") or "deck.pptx")
+        if not self.body:
+            return self._send_json({"error": "空文件"}, 400)
+        try:
+            doc = corpus_mod.build_doc(name, self.body)
+        except Exception as exc:
+            return self._send_json({"error": "解析失败：%s" % exc}, 400)
+
+        docs = self.app.store.corpus.setdefault("docs", [])
+        current = docs[self.app.store.doc]["id"] if docs else None
+        docs.append(doc)
+        docs = corpus_mod.sort_docs(docs)
+        self.app.store.corpus["docs"] = docs
+        ids = [d["id"] for d in docs]
+        self.app.store.doc = ids.index(current) if current in ids else 0
+        self.app.store.settings["doc"] = self.app.store.doc
+        self.app.store.save_corpus()
+        self.app.store.save_settings()
+        return self._send_json({
+            "ok": True,
+            "doc": {"id": doc["id"], "name": doc["name"], "pages": len(doc["pages"]),
+                    "quality": doc.get("quality")},
+            "corpus": self.app.corpus_summary(),
+        })
+
+    def _handle_corpus_reorder(self):
+        payload = self._json_body()
+        order = payload.get("order") or []
+        docs = self.app.store.corpus.get("docs") or []
+        by_id = {d["id"]: d for d in docs}
+        current = docs[self.app.store.doc]["id"] if docs else None
+        reordered = [by_id[i] for i in order if i in by_id]
+        reordered += [d for d in docs if d["id"] not in {x["id"] for x in reordered}]
+        self.app.store.corpus["docs"] = reordered
+        ids = [d["id"] for d in reordered]
+        self.app.store.doc = ids.index(current) if current in ids else 0
+        self.app.store.settings["doc"] = self.app.store.doc
+        self.app.store.save_corpus()
+        self.app.store.save_settings()
+        return self._send_json({"ok": True, "corpus": self.app.corpus_summary()})
+
+    def _handle_corpus_delete(self):
+        payload = self._json_body()
+        target = payload.get("id") or ""
+        docs = self.app.store.corpus.get("docs") or []
+        current = docs[self.app.store.doc]["id"] if docs else None
+        docs = [d for d in docs if d["id"] != target]
+        self.app.store.corpus["docs"] = docs
+        ids = [d["id"] for d in docs]
+        self.app.store.doc = ids.index(current) if current in ids else max(0, min(self.app.store.doc, len(docs) - 1))
+        self.app.store.save_corpus()
+        return self._send_json({"ok": True, "corpus": self.app.corpus_summary()})
+
+    def _handle_corpus_position(self):
+        payload = self._json_body()
+        docs = self.app.store.corpus.get("docs") or []
+        if not docs:
+            return self._send_json({"error": "还没有导入课件"}, 400)
+        doc_idx = int(payload.get("doc", self.app.store.doc) or 0)
+        doc_idx = max(0, min(doc_idx, len(docs) - 1))
+        try:
+            page = int(payload.get("page") or 1)
+        except Exception:
+            page = 1
+        page = max(1, min(page, corpus_mod.page_count(docs[doc_idx]) or 1))
+        self.app.store.doc, self.app.store.page = doc_idx, page
+        self.app.store.settings["doc"] = doc_idx
+        self.app.store.settings["page"] = page
+        self.app.store.save_settings()
+        return self._send_json({"ok": True, "corpus": self.app.corpus_summary()})
 
     def _handle_handout_upload(self):
         name = self.headers.get("X-Filename") or "handout.pdf"
@@ -703,32 +883,105 @@ class Handler(BaseHTTPRequestHandler):
         hint_level = int(payload.get("hint_level") or 1)
         image_id = payload.get("image_id") or ""
         page = payload.get("page")
+        doc_index = payload.get("doc")
         if not image_id and payload.get("image"):
             try:
                 image_id = app.store.save_image(base64.b64decode(payload["image"]))
             except Exception:
                 image_id = ""
-        # A confident match in the handout beats whatever page the UI thinks it is on.
-        if text and app.store.handout:
-            found = handout_mod.locate(app.store.handout, text)
-            if found.get("score", 0) >= 0.6 and found.get("page"):
-                page = found["page"]
-        page = int(page or app.store.page or 1)
-        if app.store.handout and page != app.store.page:
-            app.store.page = page
-            app.store.settings["page"] = page
-            app.store.save_settings()
-
         if not text and not image_id:
             return self._send_json({"error": "没有内容"}, 400)
 
         image = app.store.load_image(image_id) if image_id else None
-
         is_exercise = prompts.looks_like_exercise(text)
-        system, messages = prompts.build_messages(
-            app.store.handout, page, text, mode=mode, hint_level=hint_level,
-            image=image, exercise=is_exercise,
-        )
+
+        # 习题先问，不直接开讲：只翻译 / 给提示 / 讲解
+        if mode == "auto" and is_exercise and text and not image_id:
+            section = ""
+            doc_name = ""
+            if app.has_corpus():
+                docs = app.store.corpus["docs"]
+                doc_index = app.store.doc if doc_index is None else int(doc_index)
+                found = corpus_mod.locate(app.store.corpus, text)
+                if found.get("score", 0) >= 0.6 and found.get("doc") is not None:
+                    doc_index, page = found["doc"], found["page"]
+                ctx = corpus_mod.context(app.store.corpus, doc_index, int(page or app.store.page or 1))
+                doc_index, page = ctx["doc_index"], ctx["page"]
+                section, doc_name = ctx.get("section") or "", ctx.get("name") or ""
+            else:
+                if app.store.handout:
+                    found = handout_mod.locate(app.store.handout, text)
+                    if found.get("score", 0) >= 0.6 and found.get("page"):
+                        page = found["page"]
+                page = int(page or app.store.page or 1)
+                section = (handout_mod.section_at(app.store.handout, page) or {}).get("title") if app.store.handout else ""
+            card = {
+                "id": uuid.uuid4().hex[:12],
+                "ts": time.time() * 1000,
+                "selection": text,
+                "mode": "ask",
+                "status": "ask",
+                "exercise": True,
+                "page": page,
+                "doc": doc_index if doc_index is not None else 0,
+                "doc_name": doc_name,
+                "section": section,
+                "answer": "",
+            }
+            self._sse_start()
+            self._sse("meta", {"card": card, "page": page})
+            self._sse("ask", {
+                "card": card,
+                "modes": ["translate", "hint", "explain"],
+                "has_latin": bool(re.search(r"[A-Za-z]{3,}", text)),
+            })
+            return
+
+        if mode == "auto":
+            mode = "explain"
+        is_formula = bool(text) and not image_id and formula.looks_like_formula(text)
+        section = ""
+        doc_name = ""
+
+        if app.has_corpus():
+            docs = app.store.corpus["docs"]
+            doc_index = app.store.doc if doc_index is None else int(doc_index)
+            doc_index = max(0, min(doc_index, len(docs) - 1))
+            # a confident hit in the corpus beats the position the UI believes
+            if text:
+                found = corpus_mod.locate(app.store.corpus, text)
+                if found.get("score", 0) >= 0.6 and found.get("doc") is not None:
+                    doc_index, page = found["doc"], found["page"]
+            ctx = corpus_mod.context(app.store.corpus, doc_index, int(page or app.store.page or 1))
+            doc_index, page = ctx["doc_index"], ctx["page"]
+            section = ctx.get("section") or ""
+            doc_name = ctx.get("name") or ""
+            if (doc_index, page) != (app.store.doc, app.store.page):
+                app.store.doc, app.store.page = doc_index, page
+                app.store.settings["doc"] = doc_index
+                app.store.settings["page"] = page
+                app.store.save_settings()
+            system, messages = prompts.build_messages_multi(
+                ctx, text, mode=mode, hint_level=hint_level,
+                image=image, exercise=is_exercise, formula_suspect=is_formula,
+            )
+        else:
+            # legacy single-handout path
+            if text and app.store.handout:
+                found = handout_mod.locate(app.store.handout, text)
+                if found.get("score", 0) >= 0.6 and found.get("page"):
+                    page = found["page"]
+            page = int(page or app.store.page or 1)
+            if app.store.handout and page != app.store.page:
+                app.store.page = page
+                app.store.settings["page"] = page
+                app.store.save_settings()
+            section = (handout_mod.section_at(app.store.handout, page) or {}).get("title") if app.store.handout else ""
+            system, messages = prompts.build_messages(
+                app.store.handout, page, text, mode=mode, hint_level=hint_level,
+                image=image, exercise=is_exercise, formula_suspect=is_formula,
+            )
+
         card = {
             "id": uuid.uuid4().hex[:12],
             "ts": time.time() * 1000,
@@ -737,10 +990,13 @@ class Handler(BaseHTTPRequestHandler):
             "parent_id": payload.get("parent_id") or "",
             "hint_level": hint_level if mode == "hint" else 0,
             "page": page,
-            "section": (handout_mod.section_at(app.store.handout, page) or {}).get("title") if app.store.handout else "",
+            "doc": doc_index if doc_index is not None else 0,
+            "doc_name": doc_name,
+            "section": section,
             "image_id": image_id,
             "answer": "",
-            "exercise": prompts.looks_like_exercise(text),
+            "exercise": is_exercise,
+            "formula": is_formula,
             "status": "streaming",
         }
 
@@ -865,6 +1121,53 @@ def existing_instance(data_dir: str) -> int | None:
     return None
 
 
+def browser_profile_dir(data_dir: str) -> str:
+    """Keep the browser profile outside the app folder.
+
+    Edge keeps a few processes alive for a while after the window closes and
+    holds files under its profile; leaving that inside 旁批/data makes the
+    whole folder undeletable.  %LOCALAPPDATA% is the normal place for it.
+    """
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".cache")
+    path = os.path.join(base, "Pangpi", "browser")
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except Exception:
+        return os.path.join(data_dir, "browser")
+
+
+def wait_ready(port: int, timeout: float = 8.0) -> bool:
+    """Block until the local HTTP server answers /api/ping."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/api/ping" % port, timeout=0.6) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.15)
+    return False
+
+
+def open_window(url: str, data_dir: str, width: int) -> bool:
+    """Launch the app window and confirm it actually appeared (retry once)."""
+    profile = browser_profile_dir(data_dir)
+    screen_w, _ = win32.screen_size()
+    x = max(0, screen_w - width - 24)
+    for attempt in (1, 2):
+        prof = profile if attempt == 1 else profile + "-retry"
+        win32.open_app_window(url, prof, width=width, height=980, x=x, y=32)
+        for _ in range(38):
+            time.sleep(0.4)
+            if win32.has_window(APP_TITLE):
+                threading.Thread(target=win32.pin_topmost, args=(APP_TITLE, True), daemon=True).start()
+                print("[window] opened on attempt %d" % attempt, flush=True)
+                return True
+        print("[window] attempt %d: no window yet" % attempt, flush=True)
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="旁批 · 讲义伴读")
     parser.add_argument("--data-dir", default=None)
@@ -890,9 +1193,7 @@ def main():
                 settings = Store(data_dir)
                 url = "http://127.0.0.1:%d/?t=%s" % (port, token)
                 width = int(settings.settings.get("width") or 440)
-                screen_w, _ = win32.screen_size()
-                win32.open_app_window(url, os.path.join(data_dir, "browser"),
-                                      width=width, height=980, x=screen_w - width - 24, y=32)
+                open_window(url, data_dir, width)
                 print("已重新打开窗口：%s" % url)
             except Exception:
                 print("已在运行：http://127.0.0.1:%d/" % port)
@@ -911,26 +1212,38 @@ def main():
     app.server = httpd
 
     url = "http://127.0.0.1:%d/?t=%s" % (port, app.token)
-    with open(os.path.join(data_dir, "server.json"), "w", encoding="utf-8") as fh:
+    info_path = os.path.join(data_dir, "server.json")
+    with open(info_path + ".tmp", "w", encoding="utf-8") as fh:
         json.dump({"port": port, "pid": os.getpid(), "token": app.token, "ts": time.time()}, fh)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(info_path + ".tmp", info_path)
+
+    # Serve first, open the window only once the port really answers.  Opening
+    # the browser earlier leaves it on a "can't reach this page" screen that
+    # never retries — the reason the window looked dead until "重开窗口".
+    threading.Thread(target=httpd.serve_forever, name="http", daemon=True).start()
+    ready = wait_ready(port)
+    print("[boot] 服务就绪：%s" % ready, flush=True)
 
     if not args.no_window:
-        profile = os.path.join(data_dir, "browser")
-        screen_w, _ = win32.screen_size()
         width = int(app.store.settings.get("width") or 440)
-        win32.open_app_window(url, profile, width=width, height=980, x=screen_w - width - 24, y=32)
-        app.window_opened = True
-
-        def pin():
-            win32.pin_topmost(APP_TITLE, True)
-
-        threading.Thread(target=pin, daemon=True).start()
+        app.window_opened = open_window(url, data_dir, width)
+        if not app.window_opened:
+            print("[window] 两次都没检测到窗口，请手动打开：%s" % url, flush=True)
 
     def watchdog():
         while True:
-            time.sleep(15)
+            time.sleep(1.0)
             if args.keep_alive or not app.window_opened:
                 continue
+            # 窗口关闭后页面会发 /api/goodbye；8 秒内没有新的 ping 就退出
+            if app.exit_at and time.time() > app.exit_at:
+                try:
+                    os.remove(os.path.join(data_dir, "server.json"))
+                except Exception:
+                    pass
+                os._exit(0)
             if time.time() - app.last_ping > 100:
                 try:
                     os.remove(os.path.join(data_dir, "server.json"))
@@ -943,7 +1256,7 @@ def main():
     print("旁批 v%s 已启动：%s" % (VERSION, url))
     print("数据目录：%s" % data_dir)
     try:
-        httpd.serve_forever()
+        threading.Event().wait()
     except KeyboardInterrupt:
         pass
     finally:

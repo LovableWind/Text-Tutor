@@ -52,7 +52,9 @@ def build_handout(pdf_path: str, name: str) -> dict:
         quality = "poor"
 
     outline = detect_outline(pages)
+    domain = detect_domain(pages)
     return {
+        "domain": domain,
         "name": name,
         "page_count": doc.page_count,
         "chars": total_chars,
@@ -190,6 +192,33 @@ def locate(handout: dict, text: str) -> dict:
     return best
 
 
+MATH_WORDS = ("定理", "证明", "引理", "推论", "函数", "方程", "矩阵", "向量", "导数",
+              "积分", "极限", "概率", "不等式", "当且仅当", "解得", "代入", "化简")
+HUM_WORDS = ("认为", "观点", "主张", "理论", "概念", "背景", "意义", "影响", "作者",
+             "著作", "时期", "社会", "文化", "政治", "经济", "哲学", "文学", "历史",
+             "论述", "分析", "评价", "文本", "材料", "思潮", "制度")
+MATH_SYMBOLS = set("=∑∫√±≤≥≈∞∂∈⊂")
+
+
+def detect_domain(pages: list) -> str:
+    """Rough subject classifier: math / humanities / general."""
+    text = "\n".join((p.get("text") or "") for p in pages)[:30000]
+    if not text.strip():
+        return "general"
+    math_hits = sum(text.count(w) for w in MATH_WORDS)
+    hum_hits = sum(text.count(w) for w in HUM_WORDS)
+    symbols = sum(1 for ch in text if ch in MATH_SYMBOLS)
+    # 每千字的数学符号密度才是可靠信号；数字在人文讲义里同样常见，只给很低的权重
+    symbol_density = symbols / max(1, len(text)) * 1000
+    math_score = math_hits + min(symbol_density * 0.5, 20)
+    hum_score = hum_hits
+    if math_score >= 4 and math_score >= hum_score * 1.3:
+        return "math"
+    if hum_score >= 4 and hum_score >= math_score * 1.3:
+        return "humanities"
+    return "general"
+
+
 _CONCEPT = re.compile(
     r"(定义|定理|引理|推论|命题|性质|法则|公式|不等式|注意|易错|例题|例\s*\d|"
     r"设\s|若\s|则\s|证明|结论|注\s*\d|Remark|Theorem|Lemma|Definition)"
@@ -199,7 +228,13 @@ _NUMBERED = re.compile(
 )
 
 
-def key_points(pages: list, upto_page: int, limit_chars: int = 3000) -> str:
+_HUM_POINT = re.compile(
+    r"(定义|概念|理论|观点|主张|认为|提出|核心|特征|性质|意义|影响|评价|背景|"
+    r"主张|论证|结论|阶段|思潮|代表人物|代表作)"
+)
+
+
+def key_points(pages: list, upto_page: int, limit_chars: int = 3000, domain: str = "math") -> str:
     """A compact list of statements already covered (pages <= upto_page)."""
     picked = []
     for p in pages:
@@ -209,9 +244,11 @@ def key_points(pages: list, upto_page: int, limit_chars: int = 3000) -> str:
             s = line.strip()
             if not s or len(s) < 4:
                 continue
-            if _NUMBERED.match(s) or (_CONCEPT.search(s) and len(s) <= 140):
-                if len(s) <= 140:
-                    picked.append("P%d · %s" % (p["n"], s))
+            hit = _NUMBERED.match(s) or (_CONCEPT.search(s) and len(s) <= 140)
+            if domain == "humanities":
+                hit = hit or (_HUM_POINT.search(s) and 6 <= len(s) <= 160)
+            if hit and len(s) <= (160 if domain == "humanities" else 140):
+                picked.append("P%d · %s" % (p["n"], s))
     if not picked:
         # no recognisable statements: fall back to the first sentence of each page
         for p in pages:

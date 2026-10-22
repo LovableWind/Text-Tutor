@@ -95,7 +95,40 @@ CONTENT = [
     ],
 ]
 
-SETS = {"calculus": CONTENT, "linalg": CONTENT_LINALG}
+CONTENT_HUM = [
+    [
+        "第一章 先秦儒家",
+        "1.1 孔子的仁学",
+        "孔子认为，「仁」是礼的内在依据，礼是仁的外在表现。",
+        "概念：仁者爱人；己所不欲，勿施于人。",
+        "例 1.1 《论语》中樊迟问仁，子曰：爱人。",
+        "影响：孟子由此发展出性善论，荀子则转向隆礼重法。",
+    ],
+    [
+        "1.2 孟子的性善论",
+        "孟子主张人性本善，以四端立论：恻隐、羞恶、辞让、是非。",
+        "例 1.2 孺子入井：人皆有怵惕恻隐之心，非为交情、非求名誉。",
+        "论证结构：先立事实，再推出四端，最后归于扩充。",
+        "评价：性善论为教化提供了根据，但弱化了制度约束。",
+    ],
+    [
+        "第二章 古希腊哲学",
+        "2.1 柏拉图的理念论",
+        "柏拉图认为，可感事物分有理念，理念才是真正的存在。",
+        "例 2.1 洞穴喻：囚徒只见影子，出洞者才见真实。",
+        "意义：把知识的对象与意见的对象区分开来。",
+        "背景：回应智者派的相对主义。",
+    ],
+    [
+        "2.2 亚里士多德的形式质料说",
+        "亚里士多德提出四因说，以形式与质料解释生成。",
+        "主张：形式内在于个别事物，不脱离事物而存在。",
+        "习题 2.1 试比较柏拉图与亚里士多德对「形式」的理解。",
+        "论述题：结合文本，谈谈理念论对后世科学的影响。",
+    ],
+]
+
+SETS = {"calculus": CONTENT, "linalg": CONTENT_LINALG, "humanities": CONTENT_HUM}
 
 
 def _pdf_escape(data: bytes) -> bytes:
@@ -242,7 +275,8 @@ def main():
     for a in sys.argv[1:]:
         if a.startswith("--set="):
             which = a.split("=", 1)[1]
-    default_name = "示例讲义.pdf" if which == "calculus" else "线性代数示例.pdf"
+    default_name = {"calculus": "示例讲义.pdf", "linalg": "线性代数示例.pdf",
+                    "humanities": "人文示例.pdf"}.get(which, "示例讲义.pdf")
     out = args[0] if args else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples", default_name
     )

@@ -14,6 +14,7 @@
 
   const S = {
     settings: {},
+    corpus: { ready: false, docs: [], current: { doc: 0, page: 1 } },
     handout: { ready: false },
     page: 1,
     section: null,
@@ -144,6 +145,15 @@
 
   function renderChip() {
     const chip = $("#chipText");
+    if (S.corpus && S.corpus.ready) {
+      const cur = S.corpus.current;
+      chip.textContent = `${shortName(cur.name)} · P.${cur.page}`;
+      $("#handoutChip").classList.add("on");
+      $("#sectionName").textContent = cur.section || "";
+      const total = $("#pageTotal");
+      if (total) total.textContent = "/ " + cur.pages;
+      return;
+    }
     const h = S.handout;
     if (h && h.ready) {
       chip.textContent = `${shortName(h.name)} · P.${S.page}`;
@@ -182,6 +192,54 @@
         feed.appendChild(buildCard(child));
       }
     }
+  }
+
+  function renderAsk(el, data, card) {
+    const box = $(".answer", el);
+    if (box) box.innerHTML = "";
+    const bar = $(".card-actions", el);
+    if (bar) bar.remove();
+    const row = document.createElement("div");
+    row.className = "ask-modes";
+    const hint = document.createElement("p");
+    hint.className = "ask-lead";
+    hint.textContent = "这是习题。要先怎么做？";
+    row.appendChild(hint);
+
+    const mk = (label, mode, kind, note) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "ask-mode " + (kind || "");
+      b.textContent = label;
+      if (note) {
+        const s = document.createElement("span");
+        s.textContent = note;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => {
+        el.remove();
+        S.els.delete(card.id);
+        S.cards = S.cards.filter((c) => c.id !== card.id);
+        startExplain({ text: card.selection, mode, page: card.page, doc: card.doc });
+      });
+      return b;
+    };
+
+    if (data.has_latin) row.appendChild(mk("只翻译", "translate", "", "译成中文，不讲解"));
+    row.appendChild(mk("给提示", "hint", "primary", "先自己想，只给方向"));
+    row.appendChild(mk("讲解", "explain", "", "完整讲一遍"));
+    el.appendChild(row);
+  }
+
+  function requestMode(card, mode) {
+    startExplain({
+      text: card.selection || "",
+      image_id: card.image_id || "",
+      mode: mode,
+      parent_id: card.parent_id || card.id,
+      page: card.page || S.page,
+      doc: card.doc,
+    });
   }
 
   function buildCard(card, opts = {}) {
@@ -247,6 +305,23 @@
       el.appendChild(quote);
     }
 
+    if (card.formula && !card.image_id) {
+      const hint = document.createElement("div");
+      hint.className = "formula-hint";
+      const tip = document.createElement("span");
+      tip.textContent = "这段像是公式：从 PDF 复制时上下标、根号常被吃掉。";
+      const how = document.createElement("button");
+      how.className = "link";
+      how.type = "button";
+      how.textContent = "怎么更准？";
+      how.addEventListener("click", () => {
+        toast("按 Win+Shift+S 框选这段公式，框完松手 —— 截图会直接送来用图重讲。");
+      });
+      hint.appendChild(tip);
+      hint.appendChild(how);
+      el.appendChild(hint);
+    }
+
     const answer = document.createElement("div");
     answer.className = "answer";
     const text = card.answer || opts.partial || "";
@@ -300,7 +375,12 @@
       if (level < 3) {
         bar.appendChild(button("再提示一层", "primary", () => requestHint(card.parent_id || card.id, level + 1)));
       }
+      bar.appendChild(button("讲解", "", () => requestMode(card, "explain")));
       bar.appendChild(button("看完整解答", level >= 3 ? "primary" : "", () => requestSolution(card.parent_id || card.id)));
+    }
+    if (card.mode === "translate") {
+      bar.appendChild(button("给提示", "", () => requestMode(card, "hint")));
+      bar.appendChild(button("讲解", "", () => requestMode(card, "explain")));
     }
     if (card.mode === "solution") {
       bar.appendChild(button("换个说法", "", () => redo(card)));
@@ -395,6 +475,8 @@
           thinkChars += data.n || 0;
           const label = $(".thinking span:last-child", el);
           if (label) label.textContent = thinkChars ? "正在推理…" : "正在读你的讲义…";
+        } else if (event === "ask") {
+          renderAsk(el, data, card);
         } else if (event === "notice") {
           setSelfCheck(el, data.text || "正在自查…", "");
         } else if (event === "replace") {
@@ -457,7 +539,8 @@
     }
     const pending = newPendingCard(fields);
     runExplain(Object.assign({}, fields, {
-      page: fields.page || S.page
+      page: fields.page || S.page,
+      doc: (S.corpus && S.corpus.ready) ? S.corpus.current.doc : undefined
     }), pending);
   }
 
@@ -616,7 +699,7 @@
     startExplain({
       text,
       image_id: d.image_id || "",
-      mode: "explain",
+      mode: "auto",
       page: d.page || S.page
     });
   }
@@ -635,6 +718,39 @@
   }
 
   // ---------------------------------------------------------------- handout
+
+  async function uploadFiles(files) {
+    const list = Array.from(files || []).filter((f) => /\.(pptx|pdf)$/i.test(f.name));
+    if (!list.length) { toast("请选择 PPTX 或 PDF", "error"); return; }
+    const dz = $("#handoutEmpty");
+    let done = 0;
+    for (const f of list) {
+      if (dz) {
+        dz.hidden = false;
+        dz.innerHTML = "<strong>正在导入 " + (done + 1) + "/" + list.length +
+          "</strong><span>" + escapeHtml(f.name) + "</span>";
+      }
+      try {
+        const res = await fetch("/api/corpus/add", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "X-Pangpi-Token": TOKEN,
+            "X-Filename": encodeURIComponent(f.name)
+          },
+          body: f
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "导入失败");
+        done++;
+      } catch (err) {
+        toast(f.name + "：" + err.message, "error");
+      }
+    }
+    if (dz) dz.innerHTML = "<strong>导入课件</strong><span>PPTX / PDF，可一次多选；按讲次排好顺序</span>";
+    await refreshState();
+    if (done) toast("已导入 " + done + " 份课件");
+  }
 
   async function uploadHandout(file) {
     if (!file) return;
@@ -692,7 +808,33 @@
     const nav = $("#outline");
     const info = $("#handoutInfo");
     const dz = $("#handoutEmpty");
+    const docs = $("#docList");
     nav.innerHTML = "";
+
+    if (S.corpus && S.corpus.ready) {
+      if (dz) dz.hidden = true;
+      if (docs) { docs.hidden = false; renderDocs(docs); }
+      const resetBtn = $("#resetBtn");
+      if (resetBtn) resetBtn.hidden = false;
+      const cur = S.corpus.current;
+      const doc = S.corpus.docs[cur.doc] || {};
+      if (info) {
+        info.hidden = false;
+        const warn = doc.quality && doc.quality !== "text"
+          ? `<span class="warn">${escapeHtml(qualityNote(doc.quality))}</span>` : "";
+        info.innerHTML = `<b>${escapeHtml(cur.name)}</b> · 第 ${cur.page}/${cur.pages} 页 · 共 ${S.corpus.docs.length} 份${warn}`;
+      }
+      const outline = doc.outline || [];
+      $("#outlineCount").textContent = outline.length ? outline.length + " 节" : "本讲没有识别到小节";
+      for (const item of outline) {
+        nav.appendChild(outlineButton(item, item.page === cur.page));
+      }
+      return;
+    }
+
+    if (docs) { docs.hidden = true; docs.innerHTML = ""; }
+    const resetBtn2 = $("#resetBtn");
+    if (resetBtn2) resetBtn2.hidden = true;
     const h = S.handout;
     if (!h || !h.ready) {
       if (dz) dz.hidden = false;
@@ -709,17 +851,109 @@
     }
     $("#outlineCount").textContent = (h.outline || []).length + " 节";
     for (const item of h.outline || []) {
-      const b = document.createElement("button");
-      b.className = "lvl-" + Math.min(3, item.level || 1) + (item.page === S.page ? " current" : "");
-      const pg = document.createElement("span");
-      pg.className = "pg";
-      pg.textContent = "P" + item.page;
-      const t = document.createElement("span");
-      t.textContent = item.title;
-      b.appendChild(pg);
-      b.appendChild(t);
-      b.addEventListener("click", () => setPage(item.page));
-      nav.appendChild(b);
+      nav.appendChild(outlineButton(item, item.page === S.page));
+    }
+  }
+
+  function outlineButton(item, current) {
+    const b = document.createElement("button");
+    b.className = "lvl-" + Math.min(3, item.level || 1) + (current ? " current" : "");
+    const pg = document.createElement("span");
+    pg.className = "pg";
+    pg.textContent = "P" + item.page;
+    const t = document.createElement("span");
+    t.textContent = item.title;
+    b.appendChild(pg);
+    b.appendChild(t);
+    b.addEventListener("click", () => setPage(item.page));
+    return b;
+  }
+
+  function renderDocs(container) {
+    container.innerHTML = "";
+    S.corpus.docs.forEach((doc, idx) => {
+      const row = document.createElement("div");
+      row.className = "doc-item" + (idx === S.corpus.current.doc ? " current" : "");
+
+      if (doc.ordinal) {
+        const no = document.createElement("span");
+        no.className = "doc-no";
+        no.textContent = doc.ordinal;
+        no.title = "识别到的讲次：" + doc.ordinal;
+        row.appendChild(no);
+      }
+
+      const name = document.createElement("button");
+      name.className = "doc-name";
+      name.type = "button";
+      name.textContent = doc.name.replace(/\.(pptx|pdf)$/i, "");
+      name.title = doc.name + (doc.quality && doc.quality !== "text" ? "（文字层可能不完整）" : "");
+      name.addEventListener("click", () => selectDoc(idx));
+
+      const meta = document.createElement("span");
+      meta.className = "doc-meta";
+      meta.textContent = doc.pages + " 页";
+
+      const ops = document.createElement("span");
+      ops.className = "doc-ops";
+      ops.appendChild(docButton("↑", "上移", () => moveDoc(idx, -1), idx === 0));
+      ops.appendChild(docButton("↓", "下移", () => moveDoc(idx, 1), idx === S.corpus.docs.length - 1));
+      ops.appendChild(docButton("×", "移除", () => deleteDoc(idx)));
+
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.appendChild(ops);
+      container.appendChild(row);
+    });
+  }
+
+  function docButton(label, title, onClick, disabled) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.title = title;
+    b.disabled = !!disabled;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  async function selectDoc(idx) {
+    try {
+      const res = await api("/api/corpus/position", { method: "POST", body: { doc: idx, page: 1 } });
+      applyCorpus(res.corpus);
+      renderAll();
+    } catch (err) { toast(err.message, "error"); }
+  }
+
+  async function moveDoc(idx, delta) {
+    const docs = S.corpus.docs.slice();
+    const target = idx + delta;
+    if (target < 0 || target >= docs.length) return;
+    const tmp = docs[idx]; docs[idx] = docs[target]; docs[target] = tmp;
+    try {
+      const res = await api("/api/corpus/reorder", { method: "POST", body: { order: docs.map((d) => d.id) } });
+      applyCorpus(res.corpus);
+      renderAll();
+    } catch (err) { toast(err.message, "error"); }
+  }
+
+  async function deleteDoc(idx) {
+    const doc = S.corpus.docs[idx];
+    if (!doc) return;
+    if (!confirm("从课件库移除《" + doc.name + "》？（不会删除原文件）")) return;
+    try {
+      const res = await api("/api/corpus/delete", { method: "POST", body: { id: doc.id } });
+      applyCorpus(res.corpus);
+      renderAll();
+    } catch (err) { toast(err.message, "error"); }
+  }
+
+  function applyCorpus(corpus) {
+    if (!corpus) return;
+    S.corpus = corpus;
+    if (corpus.ready && corpus.current) {
+      S.page = corpus.current.page;
+      S.section = { title: corpus.current.section };
     }
   }
 
@@ -808,7 +1042,9 @@
     const st = await api("/api/state");
     S.settings = st.settings || {};
     S.handout = st.handout || { ready: false };
+    S.corpus = st.corpus || { ready: false, docs: [], current: { doc: 0, page: 1 } };
     S.page = st.page || 1;
+    if (S.corpus.ready && S.corpus.current) S.page = S.corpus.current.page;
     S.section = st.section || null;
     S.cards = st.cards || [];
     S.dataDir = st.data_dir;
@@ -816,17 +1052,117 @@
     applyTheme();
     renderAll();
     fillSettings();
+    updateThinkBtn();
   }
 
   // ---------------------------------------------------------------- events
 
+  function updateThinkBtn() {
+    const btn = $("#thinkBtn");
+    if (!btn) return;
+    const on = S.settings.thinking === "enabled";
+    btn.classList.toggle("on", on);
+    btn.title = on
+      ? "深度思考：开（先推理再作答，慢但更稳；点击关闭）"
+      : "深度思考：关（三四秒出结果；点击开启，难题更准）";
+  }
+
+  function showWelcome(force) {
+    if (!force && localStorage.getItem("pangbi_welcomed_v1")) return;
+    const modal = $("#welcome");
+    if (!modal) return;
+    const cb = $("#welcomeThink");
+    if (cb) cb.checked = S.settings.thinking === "enabled";
+    modal.hidden = false;
+    requestAnimationFrame(() => modal.classList.add("show"));
+    // 窗口在后台时 rAF 会被节流，补一个定时器兜底
+    setTimeout(() => modal.classList.add("show"), 300);
+  }
+
+  function welcomeOpen() {
+    const modal = $("#welcome");
+    return modal && !modal.hidden;
+  }
+
+  function closeWelcome() {
+    const modal = $("#welcome");
+    if (!modal) return;
+    modal.classList.remove("show");
+    setTimeout(() => { modal.hidden = true; }, 200);
+    localStorage.setItem("pangbi_welcomed_v1", "1");
+  }
+
+  function on(target, event, handler, opts) {
+    const el = typeof target === "string" ? $(target) : target;
+    if (!el) {
+      console.warn("缺少元素，跳过绑定：" + target);
+      return null;
+    }
+    el.addEventListener(event, handler, opts);
+    return el;
+  }
+
+  const UI_VERSION = "2026-10-22-1";
+
+  function checkUIVersion() {
+    const meta = document.querySelector('meta[name="pangbi-ui"]');
+    const page = meta ? meta.getAttribute("content") : "";
+    if (page !== UI_VERSION) {
+      throw new Error(
+        "界面文件版本不一致（HTML " + (page || "旧版") + " / JS " + UI_VERSION +
+        "）。请把整个压缩包重新解压覆盖，不要只替换其中几个文件。"
+      );
+    }
+  }
+
+  function fatal(err) {
+    try {
+      const msg = err && (err.message || err.reason || err);
+      const box = document.createElement("div");
+      box.className = "fatal";
+      box.textContent = "界面出错：" + msg + "（多半是 index.html 与 app.js 版本不一致，重新解压整个包即可）";
+      document.body.appendChild(box);
+    } catch (_) {}
+  }
+
   function wire() {
-    $("#settingsBtn").addEventListener("click", () => openPanel("settings"));
-    $("#handoutChip").addEventListener("click", () => openPanel("handout"));
-    $("#panelClose").addEventListener("click", closePanel);
+    on("#settingsBtn", "click", () => openPanel("settings"));
+    on("#helpBtn", "click", () => showWelcome(true));
+    on("#welcomeOk", "click", closeWelcome);
+    on("#welcomeThink", "change", (e) => {
+      queueSave({ thinking: e.target.checked ? "enabled" : "disabled" });
+      updateThinkBtn();
+      toast(e.target.checked ? "已开启深度思考（会慢一些）" : "已关闭深度思考（更快）");
+    });
+    on("#thinkBtn", "click", () => {
+      const next = S.settings.thinking !== "enabled";
+      queueSave({ thinking: next ? "enabled" : "disabled" });
+      S.settings.thinking = next ? "enabled" : "disabled";
+      updateThinkBtn();
+      toast(next ? "深度思考：开（每次多等十几秒，难题更稳）" : "深度思考：关（三四秒出结果）");
+    });
+    on("#resetBtn", "click", async () => {
+      if (!confirm("清空当前课件库，重新导入？（不会删除你电脑上的原文件）")) return;
+      try {
+        window.__pangbiReset = true;
+        const res = await api("/api/session/reset", { method: "POST", body: {} });
+        S.cards = [];
+        S.corpus = res.corpus || { ready: false, docs: [], current: { doc: 0, page: 1 } };
+        S.handout = res.handout || { ready: false };
+        S.page = 1;
+        S.section = null;
+        renderAll();
+        openPanel("handout");
+        toast("已清空，请导入新的课件");
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+    on("#handoutChip", "click", () => openPanel("handout"));
+    on("#panelClose", "click", closePanel);
     for (const t of $$(".tab")) t.addEventListener("click", () => selectTab(t.dataset.tab));
 
-    $("#listenBtn").addEventListener("click", () => {
+    on("#listenBtn", "click", () => {
       const next = S.settings.auto_listen === false;
       queueSave({ auto_listen: next });
       updateListenBtn();
@@ -841,12 +1177,17 @@
         sendComposer();
       }
     });
-    $("#sendBtn").addEventListener("click", sendComposer);
+    on("#sendBtn", "click", sendComposer);
 
-    $("#handoutEmpty").addEventListener("click", () => $("#filePicker").click());
-    $("#filePicker").addEventListener("change", (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (f) uploadHandout(f);
+    on("#handoutEmpty", "click", () => $("#filePicker").click());
+    on("#addFilesBtn", "click", () => $("#filePicker").click());
+    on("#addFolderBtn", "click", () => $("#folderPicker").click());
+    on("#filePicker", "change", (e) => {
+      uploadFiles(e.target.files);
+      e.target.value = "";
+    });
+    on("#folderPicker", "change", (e) => {
+      uploadFiles(e.target.files);
       e.target.value = "";
     });
     const panelBody = $(".panel-body");
@@ -860,13 +1201,13 @@
     for (const b of $$("[data-page]")) {
       b.addEventListener("click", () => setPage(Math.max(1, (parseInt($("#pageInput").value, 10) || 1) + parseInt(b.dataset.page, 10))));
     }
-    $("#pageInput").addEventListener("change", () => setPage(parseInt($("#pageInput").value, 10) || 1));
+    on("#pageInput", "change", () => setPage(parseInt($("#pageInput").value, 10) || 1));
 
-    $("#apiKey").addEventListener("change", (e) => {
+    on("#apiKey", "change", (e) => {
       const v = e.target.value.trim();
       if (v) { queueSave({ api_key: v }); e.target.value = ""; toast("Key 已保存"); }
     });
-    $("#protocol").addEventListener("change", (e) => {
+    on("#protocol", "change", (e) => {
       const proto = e.target.value;
       const preset = proto === "anthropic"
         ? { base_url: "https://api.deepseek.com/anthropic", model: "deepseek-flash" }
@@ -874,20 +1215,20 @@
       queueSave(Object.assign({ protocol: proto }, preset));
       fillSettings();
     });
-    $("#baseUrl").addEventListener("change", (e) => queueSave({ base_url: e.target.value.trim() }));
-    $("#model").addEventListener("change", (e) => queueSave({ model: e.target.value.trim() }));
-    $("#maxTokens").addEventListener("change", (e) => queueSave({ max_tokens: parseInt(e.target.value, 10) || 1600 }));
-    $("#temperature").addEventListener("change", (e) => queueSave({ temperature: parseFloat(e.target.value) || 0 }));
-    $("#hotkey").addEventListener("change", (e) => queueSave({ hotkey: e.target.value.trim() }));
-    $("#fontSize").addEventListener("change", (e) => queueSave({ font_size: parseInt(e.target.value, 10) || 15 }));
-    $("#theme").addEventListener("change", (e) => queueSave({ theme: e.target.value }));
-    $("#autoListen").addEventListener("change", (e) => { queueSave({ auto_listen: e.target.checked }); updateListenBtn(); });
-    $("#thinking").addEventListener("change", (e) => {
+    on("#baseUrl", "change", (e) => queueSave({ base_url: e.target.value.trim() }));
+    on("#model", "change", (e) => queueSave({ model: e.target.value.trim() }));
+    on("#maxTokens", "change", (e) => queueSave({ max_tokens: parseInt(e.target.value, 10) || 1600 }));
+    on("#temperature", "change", (e) => queueSave({ temperature: parseFloat(e.target.value) || 0 }));
+    on("#hotkey", "change", (e) => queueSave({ hotkey: e.target.value.trim() }));
+    on("#fontSize", "change", (e) => queueSave({ font_size: parseInt(e.target.value, 10) || 15 }));
+    on("#theme", "change", (e) => queueSave({ theme: e.target.value }));
+    on("#autoListen", "change", (e) => { queueSave({ auto_listen: e.target.checked }); updateListenBtn(); });
+    on("#thinking", "change", (e) => {
       queueSave({ thinking: e.target.checked ? "enabled" : "disabled" });
       toast(e.target.checked ? "已开启深度思考（会慢一些）" : "已关闭深度思考");
     });
 
-    $("#testBtn").addEventListener("click", async () => {
+    on("#testBtn", "click", async () => {
       const out = $("#testResult");
       out.textContent = "正在连接…";
       try {
@@ -899,21 +1240,26 @@
         out.style.color = "var(--danger)";
       }
     });
-    $("#pinBtn").addEventListener("click", async () => {
+    on("#pinBtn", "click", async () => {
       try { await api("/api/pin", { method: "POST", body: {} }); toast("已置顶"); }
       catch (e) { toast("置顶失败", "error"); }
     });
-    $("#reopenBtn").addEventListener("click", async () => {
+    on("#reopenBtn", "click", async () => {
       try { await api("/api/reopen", { method: "POST", body: {} }); } catch (e) {}
     });
-    $("#quitBtn").addEventListener("click", async () => {
+    on("#quitBtn", "click", async () => {
       if (!confirm("退出旁批？窗口会自动关闭。")) return;
       try { await api("/api/shutdown", { method: "POST", body: {} }); } catch (e) {}
       setTimeout(() => window.close(), 300);
     });
 
+    on("#welcome", "click", (e) => {
+      if (e.target && e.target.id === "welcome") closeWelcome();
+    });
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
+        if (welcomeOpen()) { closeWelcome(); return; }
         if ($("#panel").classList.contains("open")) closePanel();
       }
     });
@@ -939,8 +1285,16 @@
     if (!text) return;
     el.value = "";
     el.style.height = "auto";
-    startExplain({ text, mode: "explain", page: S.page });
+    startExplain({ text, mode: "auto", page: S.page });
   }
+
+  // 关窗时告诉服务端“可以退了”：8 秒内没有新的 ping 就真正退出。
+  // 刷新页面会先触发 pagehide，但重载后的页面 1 秒内就会 ping，从而取消退出。
+  window.addEventListener("pagehide", () => {
+    try {
+      navigator.sendBeacon("/api/goodbye?t=" + encodeURIComponent(TOKEN));
+    } catch (e) {}
+  });
 
   // ---------------------------------------------------------------- boot
 
@@ -957,14 +1311,27 @@
     } catch (_) {}
   });
 
-  (async function boot() {
+  async function boot() {
+    checkUIVersion();
     wire();
-    try {
-      await refreshState();
-    } catch (err) {
-      toast("连不上本地服务：" + err.message, "error");
+    let lastError = null;
+    let stateOk = false;
+    for (const wait of [0, 300, 700, 1500, 2500]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      try {
+        await refreshState();
+        stateOk = true;
+        break;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (!stateOk) {
+      toast("连不上本地服务：" + (lastError ? lastError.message : "未知错误"), "error");
     }
     updateListenBtn();
+    updateThinkBtn();
+    showWelcome(false);
     connectEvents();
     setInterval(() => { fetch("/api/ping", { method: "POST" }).catch(() => {}); }, 4000);
     if (!S.settings.has_key) {
@@ -975,5 +1342,8 @@
         }
       }, 700);
     }
-  })();
+  }
+
+  window.addEventListener("unhandledrejection", (e) => fatal(e.reason));
+  boot().catch(fatal);
 })();

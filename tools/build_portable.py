@@ -95,6 +95,20 @@ pause
     with open(os.path.join(dst, "调试启动.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(dbg)
 
+    unblock_bat = r"""@echo off
+chcp 65001 >nul
+setlocal
+cd /d "%~dp0"
+echo 正在解除 Windows 对下载文件的锁定（只影响本文件夹，不改系统设置）...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%~dp0' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue"
+echo.
+echo 完成。以后双击「启动旁批.bat」不会再弹「此文件可能有害」。
+timeout /t 3 >nul
+"""
+    with open(os.path.join(dst, "解除锁定.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
+        fh.write(unblock_bat)
+
     quit_bat = r"""@echo off
 chcp 65001 >nul
 setlocal

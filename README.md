@@ -1,29 +1,17 @@
 # 旁批 · 讲义伴读（Margin Tutor）
 
-## 下载
-
-Windows 便携版：[Releases](https://github.com/LovableWind/Text-Tutor/releases/latest) → 下载 `Pangpi-v1.0.0-portable-win64.zip`，解压后双击「启动旁批.bat」。
-
-首次使用请先在右上角 ⚙ 里填入自己的 DeepSeek API Key。
-
----
-
-## 简单说明
-
-注意，“重开页面” 之后才算启动！
-
 选中讲义中的任意一句话，在侧边窄窗里得到一段**贴着讲义**的讲解：只用讲义前面已经讲过的内容；需要超前时标注后文章节；讲义没有的东西必须显式标为「补充」。选中习题时只给分层提示。
 
 面向 Windows，零安装：便携包里带了一份裁剪过的 CPython 运行时，双击即用。
 
 ```
-┌───────────── 你的 PDF 阅读器 ──────────────┐    ┌──── 旁批（置顶窄窗）──────────┐
-│  选中一句话 → Ctrl+C                       │    │ P.12 · 3.2 单调有界准则       │
-│  或用Ctrl+Alt+D 取词                       │──▶│ 原文「……」                   │
-│  或 Win+Shift+S 截图公式                   │    │ 定位 / 讲解 / 依据 / 易错点   │
-└───────────────────────────────────────────┘    │ ⏭ 引申  ➕ 补充             │
-                                                 │ [给提示] [追问] [复制]        │
-                                                 └──────────────────────────────┘
+┌───────────── 你的 PDF 阅读器 ─────────────┐   ┌──── 旁批（置顶窄窗）──────────┐
+│  选中一句话 → Ctrl+C                      │   │ P.12 · 3.2 单调有界准则       │
+│  或 Ctrl+Alt+D 取词                       │──▶│ 原文「……」                    │
+│  或 Win+Shift+S 截图公式                  │   │ 定位 / 讲解 / 依据 / 易错点    │
+└───────────────────────────────────────────┘   │ ⏭ 引申  ➕ 补充               │
+                                                │ [给提示] [追问] [复制]         │
+                                                └───────────────────────────────┘
 ```
 
 ## 组成
@@ -33,10 +21,14 @@ Windows 便携版：[Releases](https://github.com/LovableWind/Text-Tutor/release
 | 本地服务 | `app/server.py` | HTTP/SSE、会话状态、卡片持久化、静态资源 |
 | 取词 | `app/win32.py` | 剪贴板读写（文本/DIB→PNG）、全局热键、`Ctrl+C` 注入、置顶、拉起浏览器 |
 | 讲义索引 | `app/pdftext.py` | 纯 Python PDF 解析（xref、对象流、Flate、Type0/Type3、ToUnicode） |
+| PPT 索引 | `app/pptxtext.py` | zipfile + ElementTree 读 PPTX 的幻灯片文字与备注，零依赖 |
+| 课件库 | `app/corpus.py` | 多份课件的排序（自然序 / 中文数字）、跨讲"已讲范围"、定位 |
 | | `app/handout.py` | 分页文本、质量判定、目录识别、定位（精确→3-gram）、已讲要点 |
+| 公式识别 | `app/formula.py` | 识别从文字层复制出来的残缺公式，改写提示词并提示改用截图 |
 | 模型接入 | `app/llm.py` | Anthropic Messages / OpenAI 兼容双协议流式，图片输入，思考开关 |
 | 边界自查 | `app/guard.py` | 抓正文里越界的页码/小节号，触发一次"只改引用"的重写 |
 | 提示词 | `app/prompts.py` | 讲义边界、三类标注规则、提示阶梯、追问上下文 |
+| 学科配置 | `app/profiles.py` | 数学 / 人文两套独立的角色、规则与任务模板，互不影响 |
 | 界面 | `web/index.html` `styles.css` `app.js` | 卡片流、讲义面板、设置、SSE 客户端 |
 | 渲染 | `web/math.js` `md.js` | 无依赖的 TeX 子集渲染（含 `\big` 家族、分数、根式、大型运算符、cases/matrix） + 安全 Markdown 渲染（含 XSS 防护） |
 | 打包 | `tools/build_portable.py` | 裁剪运行时、写启动器、打 zip |
@@ -107,6 +99,10 @@ python app\server.py --no-window     # 只起服务，浏览器手动开 http://
 ```powershell
 python tests\e2e.py            # 31 项端到端断言（本地假模型，不需要真 Key）
 python tests\test_scope.py     # 22 项离线边界断言：后页正文一个字都不进提示词
+python tests\test_formula.py   # 27 项公式识别断言（什么算残缺公式、什么算题干）
+python tests\e2e_corpus.py     # 16 项多课件端到端：排序、跨讲定位、⏭ 引用
+python tests\test_ordering.py  # 29 项讲次识别与排序：LECTURE_01 / 第一讲 / Chapter 1 / 一 二
+python tests\test_profiles.py  # 18 项学科隔离：数学规则不许漏进人文，反之亦然
 python tests\audit_grounding.py  # 真模型 11 例：越界引用 / 编造编号 / 标注缺失
 python tests\audit_transfer.py   # 换一份线性代数讲义再测 6 例（防过拟合）
 python tests\smoke_dist.py     # 便携包自检（用包内 runtime 起服务）

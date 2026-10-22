@@ -165,6 +165,39 @@ def main():
         check("prompt names handout", "示例讲义" in system)
         check("prompt restricts rules", "硬性规则" in system)
 
+        # 6a. an exercise asks first and does not call the model
+        ex_text = "Exercise 3.2  Show that the sequence is bounded."
+        events = sse(base + "/api/explain", {"text": ex_text, "mode": "auto", "page": 2}, H)
+        kinds = [e[0] for e in events]
+        check("exercise asks before explaining", "ask" in kinds and "delta" not in kinds, kinds)
+        ask_card = [e[1] for e in events if e[0] == "ask"][0]["card"]
+        check("ask card has no answer", ask_card.get("answer") == "" and ask_card.get("status") == "ask")
+        check("ask offers three modes", [e[1] for e in events if e[0] == "ask"][0]["modes"] == ["translate", "hint", "explain"])
+
+        # explicit translate runs the model in translate mode
+        events = sse(base + "/api/explain", {"text": ex_text, "mode": "translate", "page": 2}, H)
+        tdone = [e[1] for e in events if e[0] == "done"]
+        check("translate mode runs", bool(tdone) and tdone[0]["card"]["mode"] == "translate")
+        tsystem = open(prompt_dump, encoding="utf-8").read()
+        check("translate prompt forbids solving", "不要讲解" in tsystem or "不要解题" in tsystem)
+
+        # a non-exercise selection in auto mode still explains directly
+        events = sse(base + "/api/explain", {"text": "定理 1.4 单调有界数列必有极限。", "mode": "auto", "page": 2}, H)
+        kinds = [e[0] for e in events]
+        check("auto explains non-exercises", "done" in kinds and "ask" not in kinds, kinds)
+
+        # 6b. a formula-shaped selection is flagged, and the prompt warns about
+        # text-layer loss (superscripts / radicals disappear when copying).
+        events = sse(base + "/api/explain", {
+            "text": "∫x2dx = F(b) - F(a)",
+            "mode": "explain",
+            "page": 2,
+        }, H)
+        fdone = [e[1] for e in events if e[0] == "done"]
+        check("formula card flagged", bool(fdone) and fdone[0]["card"].get("formula") is True)
+        fsystem = open(prompt_dump, encoding="utf-8").read()
+        check("formula prompt warns about text layer", "文字层" in fsystem and "框选截图" in fsystem)
+
         # 7. hint mode
         events = sse(base + "/api/explain", {
             "text": "习题 2.1 设 f(x) = x^3 - 3x，讨论 f 在 [-2,2] 上的单调性与极值。",
@@ -190,6 +223,24 @@ def main():
         res = json.loads(request(base + "/api/locate", "POST",
                                  json.dumps({"text": "可导必连续，连续不一定可导"}).encode(), H).read())
         check("locate page", res.get("page") == 3, res)
+
+        # 9b. the guide page and the "new set of handouts" reset
+        guide = request(base + "/guide").read().decode("utf-8")
+        check("guide page served", "使用说明" in guide or "旁批" in guide, len(guide))
+        check("guide page is html", guide.lstrip().startswith("<!doctype html"))
+
+        state_before = json.loads(request(base + "/api/state", headers=H).read())
+        res = json.loads(request(base + "/api/session/reset", "POST", b"{}", H).read())
+        check("reset clears handout", res["handout"]["ready"] is False)
+        check("reset clears corpus", res["corpus"]["ready"] is False, res["corpus"])
+        state_after = json.loads(request(base + "/api/state", headers=H).read())
+        check("reset keeps settings", state_after["settings"]["has_key"] == state_before["settings"]["has_key"])
+
+        # 9c. shutdown handshake (the page sends this on window close)
+        res = json.loads(request(base + "/api/goodbye", "POST", b"{}", H).read())
+        check("goodbye accepted", res.get("ok") is True)
+        res = json.loads(request(base + "/api/ping", "POST", b"{}", H).read())
+        check("ping after goodbye cancels exit", res.get("ok") is True)
 
         # 10. image upload path
         import base64
