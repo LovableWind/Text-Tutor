@@ -118,6 +118,17 @@ node web\tests\test_md.mjs     # Markdown 渲染 123 项断言 / 34 组
 
 `tools/make_sample_pdf.py` 生成 4 页中文数学讲义（Type3 + ToUnicode，几十 KB），既是测试夹具也是随包示例。
 
+## 上传前自检
+
+网页上传不认 `.gitignore`，`__pycache__`、临时目录这些东西会被当成普通文件拖进去。每次上传前跑一遍：
+
+```powershell
+python tools\clean.py          # 清掉字节码缓存和测试临时目录
+python tools\check_upload.py   # 打印这次会传多少文件，有脏东西就报错退出
+```
+
+`check_upload.py` 只读，列出 app/web/tools/tests/samples/.github 与根目录文档，发现 `.pyc`、`dist/`、`data/`、`.tmp*` 就返回非零。
+
 ## 打包
 
 ```powershell

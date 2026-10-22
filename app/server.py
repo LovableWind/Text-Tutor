@@ -36,7 +36,7 @@ import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -245,6 +245,7 @@ class App:
         self.started = time.time()
         self.last_ping = time.time()
         self.exit_at = 0.0
+        self._last_capture = (None, 0.0)
         self.window_opened = False
         self.suppress_until = 0.0
         self._parse_thread = None
@@ -274,6 +275,15 @@ class App:
             return
         if text and _looks_secret(text):
             return
+
+        # 一次截图常常让剪贴板序号跳两次（系统先写 DIB 再写 PNG），
+        # 同一个内容 2.5 秒内只处理一次，避免弹出两张一样的卡片。
+        key = ("img", hashlib.sha1(image).hexdigest()) if image else ("txt", text[:300])
+        now = time.time()
+        last_key, last_at = self._last_capture
+        if key == last_key and now - last_at < 2.5:
+            return
+        self._last_capture = (key, now)
         event = {"type": "capture", "source": source, "ts": time.time() * 1000}
         if image:
             img_id = self.store.save_image(image)

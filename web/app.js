@@ -185,13 +185,10 @@
     empty.style.display = hasCards ? "none" : "";
     for (const el of $$(".card", feed)) el.remove();
     S.els.clear();
-    const parents = S.cards.filter((c) => !c.parent_id);
-    for (const card of parents) {
-      feed.appendChild(buildCard(card));
-      for (const child of S.cards.filter((c) => c.parent_id === card.id)) {
-        feed.appendChild(buildCard(child));
-      }
-    }
+    // 按时间平铺：后续的提示/解答永远排在点它的那一刻之后，
+    // 不会因为 parent 关系被重排到前面去。
+    const ordered = S.cards.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    for (const card of ordered) feed.appendChild(buildCard(card));
   }
 
   function renderAsk(el, data, card) {
@@ -442,13 +439,8 @@
     }, fields);
     const feed = $("#feed");
     $("#empty").style.display = "none";
-    const parentEl = card.parent_id ? S.els.get(card.parent_id) : null;
     const el = buildCard(card, { streaming: true });
-    if (parentEl && parentEl.parentNode === feed) {
-      feed.insertBefore(el, parentEl.nextSibling);
-    } else {
-      feed.appendChild(el);
-    }
+    feed.appendChild(el);
     S.els.set(id, el);
     scrollToCard(el);
     return { card, el, buf: "" };

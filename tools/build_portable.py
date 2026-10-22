@@ -161,6 +161,20 @@ def build(zip_it=True, runtime_src=None):
         )
         print("smoke:", (proc.stdout or proc.stderr).strip()[:300])
 
+    # 打包完顺手清掉源码树里的字节码缓存：网页上传不认 .gitignore，
+    # 这些 .pyc 会被当成普通文件拖进仓库。
+    cleaned = 0
+    for root, dirs, _files in os.walk(ROOT):
+        if "dist" in root.split(os.sep):
+            continue
+        for d in list(dirs):
+            if d == "__pycache__":
+                shutil.rmtree(os.path.join(root, d), ignore_errors=True)
+                dirs.remove(d)
+                cleaned += 1
+    if cleaned:
+        print("cleaned %d __pycache__ dirs" % cleaned)
+
     if zip_it:
         stamp = time.strftime("%Y%m%d")
         zpath = os.path.join(DIST, "%s-便携版-%s.zip" % (NAME, stamp))

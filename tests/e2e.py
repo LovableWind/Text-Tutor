@@ -178,6 +178,7 @@ def main():
         check("exercise asks before explaining", "ask" in kinds and "delta" not in kinds, kinds)
         ask_card = [e[1] for e in events if e[0] == "ask"][0]["card"]
         check("ask card has no answer", ask_card.get("answer") == "" and ask_card.get("status") == "ask")
+        check("ask card keeps the selection", ask_card.get("selection") == ex_text, ask_card.get("selection"))
         check("ask offers three modes", [e[1] for e in events if e[0] == "ask"][0]["modes"] == ["translate", "hint", "explain"])
 
         # explicit translate runs the model in translate mode
