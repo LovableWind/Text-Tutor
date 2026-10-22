@@ -8,6 +8,8 @@ Windows 便携版：[Releases](https://github.com/LovableWind/Text-Tutor/release
 
 ---
 
+## 简单说明
+
 选中讲义中的任意一句话，在侧边窄窗里得到一段**贴着讲义**的讲解：只用讲义前面已经讲过的内容；需要超前时标注后文章节；讲义没有的东西必须显式标为「补充」。选中习题时只给分层提示。
 
 面向 Windows，零安装：便携包里带了一份裁剪过的 CPython 运行时，双击即用。
