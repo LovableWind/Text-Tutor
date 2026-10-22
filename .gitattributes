@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+# Windows 启动器必须是 CRLF，否则 cmd 解析会出问题
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制
+*.pdf binary
+*.png binary
+*.ico binary
+*.zip binary
+
+# 中文文档与源码按文本处理
+*.md text
+*.py text
+*.js text
+*.css text
+*.html text
+*.json text
+*.yml text
