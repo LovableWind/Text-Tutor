@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 端到端（假模型，不需要 API Key）
+        run: python tests/e2e.py
+
+      - name: 讲义边界（离线）
+        run: python tests/test_scope.py
+
+      - name: 前端接线检查
+        run: python tests/check_wiring.py
+
+      - name: 数学渲染
+        run: node web/tests/test_math.mjs
+
+      - name: Markdown 渲染
+        run: node web/tests/test_md.mjs
