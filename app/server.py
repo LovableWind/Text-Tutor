@@ -29,13 +29,14 @@ sys.path.insert(0, HERE)
 
 import handout as handout_mod  # noqa: E402
 import corpus as corpus_mod  # noqa: E402
+import exercise  # noqa: E402
 import formula  # noqa: E402
 import guard  # noqa: E402
 import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -893,7 +894,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "没有内容"}, 400)
 
         image = app.store.load_image(image_id) if image_id else None
-        is_exercise = prompts.looks_like_exercise(text)
+
+        # 结构判断优先；落在灰色地带时让模型看一眼（只花半秒）。
+        # 判不出来也按题处理——多问一次只多一次点击，剧透一次就白读了。
+        verdict = exercise.judge(text) if text and not image_id else "prose"
+        if verdict == "ambiguous":
+            decided = None
+            if app.store.settings.get("api_key"):
+                decided = llm.classify_exercise(app.store.settings, text)
+            verdict = "exercise" if decided is not False else "prose"
+        is_exercise = verdict == "exercise"
 
         # 习题先问，不直接开讲：只翻译 / 给提示 / 讲解
         if mode == "auto" and is_exercise and text and not image_id:

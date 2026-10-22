@@ -326,6 +326,46 @@ def _absorb_usage(usage: Usage, raw: dict):
     usage.cache_write = int(raw.get("cache_creation_input_tokens") or usage.cache_write or 0)
 
 
+CLASSIFY_SYSTEM = (
+    "你是分类器。判断学生选中的这段文字是不是「需要动手去做的题目」。\n"
+    "A = 题目：需要求解、证明、计算、判断、填空，要学生自己动手。\n"
+    "B = 陈述或提问：定理/定义的陈述、已给出的解答过程、或者只是问「这是什么/为什么」。\n"
+    "只回答 A 或 B，不要解释。\n"
+    "例：\n"
+    "「设 f(x)=x^2，求 f'(1)」→ A\n"
+    "「证明：若 A 可逆，则 det(A^-1)=1/det A」→ A\n"
+    "「定理 1.4 单调有界数列必有极限」→ B\n"
+    "「为什么这里可以取极限？」→ B\n"
+    "「证明过程的第二步是取 N」→ B"
+)
+
+
+def classify_exercise(settings: dict, text: str):
+    """Ask the model whether a selection is a task to solve.
+
+    Returns True / False, or None when the answer is unusable.
+    """
+    if not text.strip():
+        return None
+    local = dict(settings)
+    local["max_tokens"] = 4
+    local["temperature"] = 0
+    try:
+        res = stream_chat(
+            local,
+            CLASSIFY_SYSTEM,
+            [{"role": "user", "content": [{"type": "text", "text": text[:600]}]}],
+        )
+    except Exception:
+        return None
+    answer = (res.text or "").strip().upper()
+    if answer.startswith("A"):
+        return True
+    if answer.startswith("B"):
+        return False
+    return None
+
+
 def ping(settings: dict) -> str:
     """Round-trip a tiny request; returns the model's short answer."""
     res = stream_chat(

@@ -165,6 +165,12 @@ def main():
         check("prompt names handout", "示例讲义" in system)
         check("prompt restricts rules", "硬性规则" in system)
 
+        # 6a0. a problem with no "exercise" keyword must still ask first
+        bare = "设 a_n = 1 + 1/2 + … + 1/n，证明 {a_n} 发散。"
+        events = sse(base + "/api/explain", {"text": bare, "mode": "auto", "page": 2}, H)
+        kinds = [e[0] for e in events]
+        check("keyword-free problem still asks", "ask" in kinds and "delta" not in kinds, kinds)
+
         # 6a. an exercise asks first and does not call the model
         ex_text = "Exercise 3.2  Show that the sequence is bounded."
         events = sse(base + "/api/explain", {"text": ex_text, "mode": "auto", "page": 2}, H)

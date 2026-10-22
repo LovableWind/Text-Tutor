@@ -6,33 +6,12 @@ from __future__ import annotations
 import re
 
 from handout import clip, key_points, page_text, section_at, toc_lines
+import exercise
 import profiles
 
-EXERCISE_HINTS = re.compile(
-    r"(练习|习题|作业|思考题|例题|试证|证明：|证明:|求证|计算|求\s*[a-zA-Zα-ω一-龥]|讨论|判断|"
-    r"化简|解方程|解不等式|判断下列|问：|试求|设.{0,20}求|"
-    r"论述|简答|材料分析|案例分析|谈谈|评价一下|比较.{0,10}异同|阅读下列材料)",
-    re.I,
-)
-# 英文课件里的题号：Exercise 3 / Supplement Exercise 2 / Problem 5 / Ex. 4
-EXERCISE_EN = re.compile(
-    r"(?:supplement(?:al)?\s+)?(?:exercise|problem|question|homework|practice|hw|ex\.?)\s*[\d(（]",
-    re.I,
-)
-
-
 def looks_like_exercise(text: str) -> bool:
-    t = (text or "").strip()
-    if not t:
-        return False
-    if EXERCISE_HINTS.search(t):
-        return True
-    if EXERCISE_EN.search(t):
-        return True
-    # a short prompt ending with a question mark and containing math
-    if len(t) < 120 and ("?" in t or "？" in t):
-        return True
-    return False
+    """结构判断优先；真正难判的交给 exercise.judge / 模型分类器。"""
+    return exercise.looks_like_exercise(text)
 
 
 SYSTEM_HEAD = """你是「旁批」，{role}，陪他读一份讲义。

@@ -24,6 +24,7 @@
 | PPT 索引 | `app/pptxtext.py` | zipfile + ElementTree 读 PPTX 的幻灯片文字与备注，零依赖 |
 | 课件库 | `app/corpus.py` | 多份课件的排序（自然序 / 中文数字）、跨讲"已讲范围"、定位 |
 | | `app/handout.py` | 分页文本、质量判定、目录识别、定位（精确→3-gram）、已讲要点 |
+| 题型判定 | `app/exercise.py` | 结构打分（祈使动词/问句/选项/填空）+ 模型兜底，判不准按题处理 |
 | 公式识别 | `app/formula.py` | 识别从文字层复制出来的残缺公式，改写提示词并提示改用截图 |
 | 模型接入 | `app/llm.py` | Anthropic Messages / OpenAI 兼容双协议流式，图片输入，思考开关 |
 | 边界自查 | `app/guard.py` | 抓正文里越界的页码/小节号，触发一次"只改引用"的重写 |
@@ -103,6 +104,7 @@ python tests\test_formula.py   # 27 项公式识别断言（什么算残缺公�
 python tests\e2e_corpus.py     # 16 项多课件端到端：排序、跨讲定位、⏭ 引用
 python tests\test_ordering.py  # 29 项讲次识别与排序：LECTURE_01 / 第一讲 / Chapter 1 / 一 二
 python tests\test_profiles.py  # 18 项学科隔离：数学规则不许漏进人文，反之亦然
+python tests\test_exercise.py  # 23 项题型判定：没有"习题"二字也要认出是题
 python tests\audit_grounding.py  # 真模型 11 例：越界引用 / 编造编号 / 标注缺失
 python tests\audit_transfer.py   # 换一份线性代数讲义再测 6 例（防过拟合）
 python tests\smoke_dist.py     # 便携包自检（用包内 runtime 起服务）
