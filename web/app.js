@@ -195,6 +195,9 @@
   }
 
   function renderAsk(el, data, card) {
+    // 临时卡片用 text 存原文，服务端返回的卡片用 selection，两边都认
+    const info = Object.assign({}, card || {}, (data && data.card) || {});
+    const text = (info.selection || info.text || "").trim();
     const box = $(".answer", el);
     if (box) box.innerHTML = "";
     const bar = $(".card-actions", el);
@@ -206,6 +209,17 @@
     hint.textContent = "这是习题。要先怎么做？";
     row.appendChild(hint);
 
+    const choose = (mode) => {
+      if (!text) {
+        toast("没拿到选中的文字，麻烦重新选一次", "error");
+        return;
+      }
+      el.remove();
+      S.els.delete(card.id);
+      S.cards = S.cards.filter((c) => c.id !== info.id && c.id !== card.id);
+      startExplain({ text, mode, page: info.page, doc: info.doc });
+    };
+
     const mk = (label, mode, kind, note) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -216,12 +230,7 @@
         s.textContent = note;
         b.appendChild(s);
       }
-      b.addEventListener("click", () => {
-        el.remove();
-        S.els.delete(card.id);
-        S.cards = S.cards.filter((c) => c.id !== card.id);
-        startExplain({ text: card.selection, mode, page: card.page, doc: card.doc });
-      });
+      b.addEventListener("click", () => choose(mode));
       return b;
     };
 
@@ -531,6 +540,10 @@
   }
 
   function startExplain(fields) {
+    if (!fields.image_id && !(fields.text || "").trim()) {
+      toast("没拿到选中的文字，麻烦重新选一次", "error");
+      return;
+    }
     if (!S.settings.has_key) {
       toast("先填 API Key 才能讲解", "error");
       openPanel("settings");
