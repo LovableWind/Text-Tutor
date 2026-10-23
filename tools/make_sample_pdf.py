@@ -128,7 +128,63 @@ CONTENT_HUM = [
     ],
 ]
 
-SETS = {"calculus": CONTENT, "linalg": CONTENT_LINALG, "humanities": CONTENT_HUM}
+CONTENT_DEMO = [
+    [
+        "第一章 数列与极限",
+        "1.1 数列极限的定义",
+        "定义 1.1 设 {a_n} 是一个数列，A 是一个常数。若对任意 ε>0，存在正整数 N，使得当 n>N 时恒有 |a_n - A| < ε，则称数列 {a_n} 收敛于 A。",
+        "例 1.1 用定义证明 lim (n+1)/n = 1。",
+        "证明 对任意 ε>0，取 N = [1/ε]+1，当 n>N 时，|(n+1)/n - 1| = 1/n < ε。",
+        "注意 这里的 N 依赖 ε；ε 越小，N 通常越大。",
+    ],
+    [
+        "1.2 收敛数列的性质",
+        "定理 1.1（唯一性）收敛数列的极限唯一。",
+        "定理 1.2（有界性）收敛数列必有界。",
+        "定理 1.3（保号性）若 lim a_n = A > 0，则存在 N，当 n>N 时 a_n > 0。",
+        "例 1.2 若 lim a_n = 2，证明存在 N，当 n>N 时 a_n > 1。",
+        "证明 取 ε = 1，由定义 1.1 得存在 N，使 |a_n - 2| < 1，即 a_n > 1。",
+    ],
+    [
+        "1.3 单调有界准则",
+        "定理 1.4 单调有界数列必有极限。",
+        "证明思路 以单调递增且有上界为例，取所有上界中最小的那个，记为 A。",
+        "第一步 验证 A 是上界：对一切 n，都有 a_n ≤ A。",
+        "第二步 验证 A 是极限：对任意 ε>0，都存在某一项 a_N > A - ε。",
+        "这两步合起来就得到 |a_n - A| < ε。",
+        "例 1.3 设 a_1 = 1，a_{n+1} = sqrt(2 + a_n)，证明 {a_n} 收敛。",
+    ],
+    [
+        "1.4 实数的确界原理",
+        "定义 1.2 若数集 S 有上界，且所有上界中存在最小的一个，则称它为 S 的上确界，记作 sup S。",
+        "定理 1.5（确界原理）非空有上界的实数集必有上确界。",
+        "注 1.3 节里「所有上界中最小的那个」指的就是上确界；确界原理保证了它一定存在。",
+        "例 1.4 数集 {1 - 1/n} 的上确界是 1，但它取不到。",
+    ],
+    [
+        "第二章 导数与微分",
+        "2.1 导数的定义",
+        "定义 2.1 设函数 y=f(x) 在点 x_0 的某邻域内有定义，若极限 lim [f(x_0+Δx) - f(x_0)]/Δx (Δx→0) 存在，则称 f 在 x_0 处可导。",
+        "定理 2.1 可导必连续，连续不一定可导。",
+        "例 2.1 求 f(x)=x^2 在 x=1 处的导数。",
+    ],
+    [
+        "2.2 求导法则与高阶导数",
+        "公式 (uv)' = u'v + uv'，(u/v)' = (u'v - uv')/v^2。",
+        "定义 2.2 二阶导数记作 f''(x) 或 d^2y/dx^2。",
+        "定理 2.2（莱布尼茨公式）(uv)^(n) = sum C(n,k) u^(k) v^(n-k)。",
+        "例 2.2 求 y = x e^x 的二阶导数。",
+    ],
+    [
+        "习题",
+        "习题 1.1 用定义证明 lim (2n+1)/(n+3) = 2。",
+        "习题 1.2 设 a_1 = 1，a_{n+1} = sqrt(2 + a_n)，证明 {a_n} 收敛并求其极限。",
+        "习题 2.1 设 f(x) = x^3 - 3x，讨论 f 在 [-2,2] 上的单调性与极值。",
+    ],
+]
+
+SETS = {"calculus": CONTENT, "linalg": CONTENT_LINALG, "humanities": CONTENT_HUM,
+        "demo": CONTENT_DEMO}
 
 
 def _pdf_escape(data: bytes) -> bytes:
@@ -276,10 +332,13 @@ def main():
         if a.startswith("--set="):
             which = a.split("=", 1)[1]
     default_name = {"calculus": "示例讲义.pdf", "linalg": "线性代数示例.pdf",
-                    "humanities": "人文示例.pdf"}.get(which, "示例讲义.pdf")
-    out = args[0] if args else os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples", default_name
-    )
+                    "humanities": "人文示例.pdf",
+                    "demo": "演示讲义.pdf"}.get(which, "示例讲义.pdf")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if which == "demo":
+        out = args[0] if args else os.path.join(root, "demo", "演示讲义.pdf")
+    else:
+        out = args[0] if args else os.path.join(root, "samples", default_name)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     content = SETS[which]
     data = build_pdf(content)

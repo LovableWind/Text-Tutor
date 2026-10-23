@@ -155,18 +155,18 @@ margin-tutor/
 ├─ tests/          测试
 ├─ samples/        示例讲义与课件
 ├─ dist/           打包产物（不入库）
-└─ 启动旁批.bat → 便携包顶层启动器（由 build_portable 生成）
+├─ tools/launcher/Program.cs → 旁批.exe 的源码（csc 编译，内嵌图标）
+└─ 旁批.exe → 便携包顶层启动器
 ```
 
 **便携包解压后的结构**（用户看到的）：
 
 ```
 旁批/
-├─ 启动旁批.bat     ← 唯一需要双击的
+├─ 旁批.exe         ← 带图标的启动器（C# 编译，无控制台）
 ├─ 使用说明.md
-├─ README.md
-├─ LICENSE
-└─ _internal/       ← app / web / runtime / samples + 调试、退出两个 bat
+└─ _internal/       ← app / web / runtime / samples / README / LICENSE / CHANGELOG
+                      + 调试启动.bat、退出旁批.bat
 ```
 
 ## 打包

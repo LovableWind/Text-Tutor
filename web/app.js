@@ -50,6 +50,23 @@
 
   // ---------------------------------------------------------------- api
 
+  const OFFLINE_MSG =
+    "后台没有响应（可能正在启动或重启）。等两秒再试；一直这样就看 data\\app.log。";
+
+  // 后台是我们自己的本地服务，偶发的连接失败多半是刚重启，重试两次就够
+  async function fetchRetry(url, opts, tries = 3) {
+    let lastError = null;
+    for (let i = 0; i < tries; i++) {
+      try {
+        return await fetch(url, opts);
+      } catch (err) {
+        lastError = err;
+        if (i < tries - 1) await new Promise((r) => setTimeout(r, 350 * (i + 1)));
+      }
+    }
+    throw new Error(OFFLINE_MSG);
+  }
+
   async function api(path, opts = {}) {
     const headers = { "X-Pangpi-Token": TOKEN };
     let body = opts.body;
@@ -57,7 +74,7 @@
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(body);
     }
-    const res = await fetch(path, { method: opts.method || (body ? "POST" : "GET"), headers, body });
+    const res = await fetchRetry(path, { method: opts.method || (body ? "POST" : "GET"), headers, body });
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
@@ -824,16 +841,28 @@
           },
           body: f
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "导入失败");
+        const text = await res.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+        if (!res.ok) {
+          const reason = data.error || data.message ||
+            (res.status === 413 ? "文件太大，后台拒绝了这次上传" : "后台返回 " + res.status);
+          throw new Error(reason);
+        }
         done++;
       } catch (err) {
-        toast(f.name + "：" + err.message, "error");
+        const msg = err && err.message === "Failed to fetch"
+          ? "上传中断：后台没有响应，请重试一次"
+          : (err && err.message) || "未知错误";
+        toast(f.name + "：" + msg, "error");
       }
     }
     if (dz) dz.innerHTML = "<strong>导入课件</strong><span>PPTX / PDF，可一次多选；按讲次排好顺序</span>";
     await refreshState();
-    if (done) toast("已导入 " + done + " 份课件");
+    if (done) {
+      closePanel();
+      toast("已导入 " + done + " 份课件，可以开始选中文字了");
+    }
   }
 
   async function uploadHandout(file) {
@@ -843,9 +872,10 @@
       return;
     }
     const drop = $("#handoutEmpty");
+    const original = drop.innerHTML;
     drop.innerHTML = '<strong>正在上传…</strong><span>' + escapeHtml(file.name) + "</span>";
     try {
-      const res = await fetch("/api/handout", {
+      const res = await fetchRetry("/api/handout", {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
@@ -853,13 +883,21 @@
           "X-Filename": encodeURIComponent(file.name)
         },
         body: file
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "上传失败");
+      }, 2);
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+      if (!res.ok) {
+        throw new Error(data.error || data.message ||
+          (res.status === 413 ? "文件太大，后台拒绝了这次上传" : "后台返回 " + res.status));
+      }
       pollHandoutStatus();
     } catch (err) {
-      toast(err.message, "error");
-      $(".dropzone").innerHTML = "导入失败，点击重试";
+      const msg = err && err.message === "Failed to fetch"
+        ? "上传中断：后台没有响应，请重试一次"
+        : (err && err.message) || "未知错误";
+      toast(msg, "error");
+      drop.innerHTML = original;
     }
   }
 
@@ -1106,20 +1144,34 @@
   }
 
   let saveTimer = null;
+  let pendingPatch = {};
+
   function queueSave(patch) {
     Object.assign(S.settings, patch);
+    Object.assign(pendingPatch, patch);
     applyTheme();
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      try {
-        const res = await api("/api/settings", { method: "POST", body: patch });
-        if (res && res.settings) {
-          const hasKey = res.settings.has_key;
-          S.settings.has_key = hasKey;
-          if (hasKey) S.settings.key_hint = res.settings.key_hint;
-        }
-      } catch (err) { toast(err.message, "error"); }
-    }, 320);
+    saveTimer = setTimeout(() => { flushSave(); }, 320);
+  }
+
+  // 设置是防抖保存的；点「测试连接」前必须先把待存的东西落盘，
+  // 否则服务端还拿着旧 Key，第一次必然失败。
+  async function flushSave() {
+    clearTimeout(saveTimer);
+    const patch = pendingPatch;
+    pendingPatch = {};
+    if (!Object.keys(patch).length) return true;
+    try {
+      const res = await api("/api/settings", { method: "POST", body: patch });
+      if (res && res.settings) {
+        S.settings.has_key = res.settings.has_key;
+        if (res.settings.has_key) S.settings.key_hint = res.settings.key_hint;
+      }
+      return true;
+    } catch (err) {
+      toast(err.message, "error");
+      return false;
+    }
   }
 
   async function refreshState() {
@@ -1137,6 +1189,7 @@
     renderAll();
     fillSettings();
     updateThinkBtn();
+    updateOnboard();
   }
 
   // ---------------------------------------------------------------- events
@@ -1186,17 +1239,22 @@
     return el;
   }
 
-  const UI_VERSION = "2026-10-22-1";
+  const UI_VERSION = "2026-10-23-4";
 
   function checkUIVersion() {
     const meta = document.querySelector('meta[name="pangbi-ui"]');
     const page = meta ? meta.getAttribute("content") : "";
-    if (page !== UI_VERSION) {
-      throw new Error(
-        "界面文件版本不一致（HTML " + (page || "旧版") + " / JS " + UI_VERSION +
-        "）。请把整个压缩包重新解压覆盖，不要只替换其中几个文件。"
-      );
+    if (page === UI_VERSION) return true;
+
+    // 浏览器缓存了旧的 app.js 或旧页面：自己带时间戳重载一次，别把问题丢给用户
+    if (!sessionStorage.getItem("pangbi-ui-reloaded")) {
+      sessionStorage.setItem("pangbi-ui-reloaded", "1");
+      const url = location.pathname + "?_v=" + Date.now() + location.hash;
+      location.replace(url);
+      return false;
     }
+    console.warn("界面版本仍然不一致：HTML " + page + " / JS " + UI_VERSION);
+    return true;
   }
 
   function fatal(err) {
@@ -1211,6 +1269,8 @@
 
   function wire() {
     on("#settingsBtn", "click", () => openPanel("settings"));
+    on("#onboardKey", "click", () => openPanel("settings"));
+    on("#onboardDeck", "click", () => openPanel("handout"));
     on("#helpBtn", "click", () => showWelcome(true));
     on("#welcomeOk", "click", closeWelcome);
     on("#welcomeThink", "change", (e) => {
@@ -1316,6 +1376,13 @@
       const out = $("#testResult");
       out.textContent = "正在连接…";
       try {
+        // 输入框里还没保存的 Key 先存下去（否则服务端用的还是旧配置）
+        const keyEl = $("#apiKey");
+        if (keyEl && keyEl.value.trim()) {
+          queueSave({ api_key: keyEl.value.trim() });
+          keyEl.value = "";
+        }
+        await flushSave();
         const res = await api("/api/test", { method: "POST", body: {} });
         out.textContent = res.ok ? "连接正常：" + (res.reply || "") : "失败：" + (res.error || "");
         out.style.color = res.ok ? "var(--extra)" : "var(--danger)";
@@ -1347,6 +1414,31 @@
         if ($("#panel").classList.contains("open")) closePanel();
       }
     });
+  }
+
+  // 缺 Key / 缺讲义时只在顶部显示一条提示，不再抢走整个界面
+  function updateOnboard() {
+    const bar = $("#onboard");
+    if (!bar) return;
+    const needKey = !S.settings.has_key;
+    const needDeck = !(S.corpus && S.corpus.ready) && !(S.handout && S.handout.ready);
+    if (!needKey && !needDeck) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    const msg = $("#onboardMsg");
+    const keyBtn = $("#onboardKey");
+    const deckBtn = $("#onboardDeck");
+    if (needKey) {
+      msg.textContent = "填一个 API Key 就能开始讲解";
+      keyBtn.hidden = false;
+      deckBtn.hidden = !needDeck;
+    } else {
+      msg.textContent = "导入讲义后，它才知道你学到哪一页";
+      keyBtn.hidden = true;
+      deckBtn.hidden = false;
+    }
   }
 
   function updateListenBtn() {
@@ -1396,7 +1488,7 @@
   });
 
   async function boot() {
-    checkUIVersion();
+    if (!checkUIVersion()) return;
     wire();
     let lastError = null;
     let stateOk = false;
@@ -1418,14 +1510,7 @@
     showWelcome(false);
     connectEvents();
     setInterval(() => { fetch("/api/ping", { method: "POST" }).catch(() => {}); }, 4000);
-    if (!S.settings.has_key) {
-      setTimeout(() => {
-        if (!S.settings.has_key) {
-          openPanel("settings");
-          toast("先填一个 API Key，讲解才能开始");
-        }
-      }, 700);
-    }
+    updateOnboard();
   }
 
   window.addEventListener("unhandledrejection", (e) => fatal(e.reason));

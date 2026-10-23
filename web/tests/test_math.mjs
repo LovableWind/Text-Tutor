@@ -348,6 +348,44 @@ check('unknown sizing-like command still degrades to literal text', () => {
   noThrow(() => MathRender.tex(String.raw`\Big`), 'a lone \\Big does not throw');
 });
 
+check('教材里的变体不等号不再漏出字面量', () => {
+  const leq = MathRender.tex(String.raw`\leqslant`);
+  match(leq, /\u2a7d/, 'renders U+2A7D');
+  notMatch(leq, /\\leqslant/, 'no literal command text');
+  const geq = MathRender.tex(String.raw`a \geqslant b`);
+  match(geq, /\u2a7e/, 'renders U+2A7E');
+  const chained = MathRender.tex(String.raw`a \le b \le c`);
+  equal(count(chained, '\u2264'), 2, 'chained relations render twice');
+});
+
+check('\\not 组合被合成为单个否定符号', () => {
+  const nin = MathRender.tex(String.raw`x \not\in A`);
+  match(nin, /\u2209/, 'renders ∉');
+  notMatch(nin, /\\not/, 'no literal \\not');
+  const neq = MathRender.tex(String.raw`x \not= 0`);
+  match(neq, /\u2260/, 'renders ≠');
+  const nsub = MathRender.tex(String.raw`A \not\subset B`);
+  match(nsub, /\u2284/, 'renders ⊄');
+});
+
+check('常见排版命令不再漏出反斜杠', () => {
+  const cases = [
+    [String.raw`\pmod{2}`, 'mod'],
+    [String.raw`\bmod`, 'mod'],
+    [String.raw`\text{速度}`, '速度'],
+    [String.raw`\mathcal{L}`, 'L'],
+    [String.raw`\tilde{x}`, 'x'],
+    [String.raw`\binom{n}{k}`, 'C('],
+    [String.raw`\displaystyle\sum x`, '\u2211'],
+    [String.raw`\left\lVert x \right\rVert`, '\u2016'],
+  ];
+  for (const [tex, expect] of cases) {
+    const html = MathRender.tex(tex);
+    notMatch(html, /\\[a-zA-Z]+/, 'no literal command in: ' + tex);
+    match(html, new RegExp(expect.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'renders content of: ' + tex);
+  }
+});
+
 check('math source contains no innerHTML writes', () => {
   const source = readFileSync(new URL('../math.js', import.meta.url), 'utf8');
   notMatch(source, /\.innerHTML\s*=/, 'no innerHTML assignment');

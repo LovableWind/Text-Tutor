@@ -67,32 +67,34 @@ def write_launchers(dst: str):
     internal = os.path.join(dst, "_internal")
     os.makedirs(internal, exist_ok=True)
 
+    # 顶层是编译好的 旁批.exe（带图标、不弹黑窗）；.bat 退到 _internal 当备用入口
+    exe_src = os.path.join(ROOT, "tools", "bin", "Pangpi.exe")
+    if os.path.exists(exe_src):
+        shutil.copy2(exe_src, os.path.join(dst, "旁批.exe"))
+
     bat = r"""@echo off
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-set "ROOT=%~dp0"
+set "ROOT=%~dp0\.."
 
-if not exist "_internal\runtime\pythonw.exe" (
+if not exist "%ROOT%\_internal\runtime\pythonw.exe" (
   echo.
   echo   找不到程序文件：_internal\runtime\pythonw.exe
-  echo   请解压整个压缩包，不要只复制其中几个文件。
   echo.
   pause
   exit /b 1
 )
 
-if not exist "data" mkdir "data"
-
-rem 首次运行：去掉 Windows 给下载文件加的“来自 Internet”标记，只影响本文件夹
-if not exist "data\.unblocked" (
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '$env:ROOT' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1
-  echo ok> "data\.unblocked"
+if not exist "%ROOT%\data" mkdir "%ROOT%\data"
+if not exist "%ROOT%\data\.unblocked" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '%ROOT%' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1
+  echo ok> "%ROOT%\data\.unblocked"
 )
 
-start "" "_internal\runtime\pythonw.exe" "_internal\app\server.py" --data-dir "%ROOT%data" >> "data\app.log" 2>&1
+start "" "%ROOT%\_internal\runtime\pythonw.exe" "%ROOT%\_internal\app\server.py" --data-dir "%ROOT%\data" >> "%ROOT%\data\app.log" 2>&1
 """
-    with open(os.path.join(dst, "启动旁批.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
+    with open(os.path.join(internal, "旁批（备用启动）.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(bat)
 
     dbg = r"""@echo off
@@ -137,10 +139,14 @@ def build(zip_it=True, runtime_src=None):
     copytree(os.path.join(ROOT, "web"), os.path.join(internal, "web"),
              ignore=lambda d, names: {n for n in names if n == "tests"})
     copytree(os.path.join(ROOT, "samples"), os.path.join(internal, "samples"), ignore=None)
-    for doc in ("README.md", "使用说明.md", "LICENSE", "CHANGELOG.md"):
+    # 顶层只留三样：启动器、使用说明、_internal；其余文档收进 _internal
+    guide = os.path.join(ROOT, "使用说明.md")
+    if os.path.exists(guide):
+        shutil.copy2(guide, os.path.join(out, "使用说明.md"))
+    for doc in ("README.md", "LICENSE", "CHANGELOG.md"):
         src = os.path.join(ROOT, doc)
         if os.path.exists(src):
-            shutil.copy2(src, os.path.join(out, doc))
+            shutil.copy2(src, os.path.join(internal, doc))
 
     print("copying runtime from", runtime_src)
     size = trim_runtime(runtime_src, os.path.join(internal, "runtime"))

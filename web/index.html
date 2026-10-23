@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" href="/icon-256.png">
-<link rel="apple-touch-icon" href="/icon-256.png">
-<meta name="pangbi-ui" content="2026-10-22-1">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="shortcut icon" href="/favicon.ico?v=3">
+<link rel="icon" type="image/png" href="/icon-256.png?v=3">
+<link rel="apple-touch-icon" href="/icon-256.png?v=3">
+<meta name="pangbi-ui" content="2026-10-23-4">
 <title>旁批 · 讲义伴读</title>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -36,14 +37,22 @@
   </header>
 
   <main id="feed" class="feed">
+    <div id="onboard" class="onboard" hidden>
+      <div class="onboard-text"><b>还差一步</b><span id="onboardMsg"></span></div>
+      <div class="onboard-actions">
+        <button id="onboardKey" class="primary-btn" hidden>填入 API Key</button>
+        <button id="onboardDeck" class="ghost-btn" hidden>导入讲义</button>
+      </div>
+    </div>
+
     <section id="empty" class="empty">
-      <div class="empty-mark">旁</div>
+      <div class="empty-mark">旁批</div>
       <h1>选中讲义里的任意一句</h1>
       <p class="lede">我把这句话讲给你听——只用讲义前面已经讲过的内容。</p>
       <ul class="steps">
-        <li><kbd>Ctrl</kbd>+<kbd>C</kbd><span>复制你正在读的那句话，自动讲解</span></li>
-        <li><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd><span>在任意 PDF 阅读器里取词（自动复制）</span></li>
-        <li><kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd><span>截图圈选公式或手写内容</span></li>
+        <li><span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>C</kbd></span><span class="desc">复制你正在读的那句话，自动讲解</span></li>
+        <li><span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>Alt</kbd><i>+</i><kbd>D</kbd></span><span class="desc">在任意 PDF 阅读器里取词（自动复制）</span></li>
+        <li><span class="keys"><kbd>Win</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>S</kbd></span><span class="desc">截图圈选公式或手写内容</span></li>
       </ul>
       <p class="empty-foot">第一次使用，先点右上角 <b>⚙</b> 填 API Key，再点顶部胶囊导入讲义 PDF。</p>
     </section>

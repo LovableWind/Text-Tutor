@@ -36,7 +36,7 @@ import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {

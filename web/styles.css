@@ -219,10 +219,11 @@ body {
 
 .empty-mark {
   font-family: var(--serif);
-  font-size: 40px;
-  line-height: 1;
+  font-size: 32px;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
   color: var(--accent);
-  opacity: 0.85;
+  opacity: 0.9;
   margin-bottom: 14px;
 }
 
@@ -260,7 +261,21 @@ body {
   color: var(--text-2);
 }
 
-.steps span { color: var(--muted); }
+.steps .desc { color: var(--muted); }
+
+/* 快捷键必须整组不折行，否则 Ctrl+C 会被拆成两行 */
+.steps .keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.steps .keys i {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 10.5px;
+}
 
 kbd {
   display: inline-block;
@@ -1051,8 +1066,11 @@ hr { border: 0; border-top: 1px solid var(--line-soft); margin: 18px 0 12px; }
 @keyframes shimmer { from { background-position: 0 0; } to { background-position: -200% 0; } }
 
 @media (max-width: 380px) {
-  .brand .name { display: none; }
-  .chip { max-width: 140px; }
+  /* 品牌名不能藏：窄窗口下缩字距，保留「旁批」两个字 */
+  .brand .name { font-size: 13px; letter-spacing: 0.04em; }
+  .brand .logo { width: 22px; height: 22px; font-size: 13px; }
+  .chip { max-width: 110px; }
+  .toggle-pill { padding: 0 6px; }
 }
 
 
@@ -1381,3 +1399,23 @@ hr { border: 0; border-top: 1px solid var(--line-soft); margin: 18px 0 12px; }
   color: #1a1206;
   text-decoration: none;
 }
+
+
+/* 顶部引导条：不再用面板遮住讲解区 */
+.onboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 14px 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.onboard-text { display: flex; flex-direction: column; gap: 2px; }
+.onboard-text b { font-size: 12.5px; color: var(--accent); }
+.onboard-text span { font-size: 11.5px; color: var(--text-2); }
+.onboard-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.onboard-actions button { font-size: 11.5px; padding: 5px 10px; }

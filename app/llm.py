@@ -206,11 +206,17 @@ def stream_chat(
 
 def _friendly_http(status: int, detail: str) -> str:
     hint = {
-        401: "API Key 无效或已过期",
+        400: "请求被拒绝，通常是模型名写错或参数不被支持",
+        401: "API Key 无效或已过期（去平台重新复制一次）",
+        402: "账户余额不足，去 platform.deepseek.com 充值；或换一个免费额度的服务商",
         403: "这个 Key 没有调用该模型的权限",
         404: "接口地址不对（检查 Base URL 是否要带 /v1）",
         422: "请求参数被拒绝",
         429: "请求太频繁，稍等几秒再试",
+        500: "模型服务端出错，稍后重试",
+        502: "模型服务暂时不可用，稍后重试",
+        503: "模型服务繁忙，稍后重试",
+        504: "模型服务超时，稍后重试",
     }.get(status, "")
     tail = ("：" + detail) if detail else ""
     return "模型返回 %d%s%s" % (status, (" · " + hint) if hint else "", tail)

@@ -67,6 +67,33 @@
     aleph: '\u2135', Re: '\u211c', Im: '\u2111', prime: '\u2032',
     degree: '\u00b0', ell: '\u2113', hbar: '\u210f'
   };
+  // 教材里常见、但基础表没覆盖的变体（不带这些会原样漏出 \leqslant 这种字面量）
+  var SYMBOLS_EXTRA = {
+    leqslant: '\u2a7d', geqslant: '\u2a7e',
+    nleqslant: '\u2a7d\u0338', ngeqslant: '\u2a7e\u0338',
+    lneq: '\u2a87', gneq: '\u2a88', lneqq: '\u2268', gneqq: '\u2269',
+    nleq: '\u2270', ngeq: '\u2271', nless: '\u226e', ngtr: '\u226f',
+    nsubset: '\u2284', nsupset: '\u2285',
+    subsetneq: '\u228a', supsetneq: '\u228b',
+    nsubseteq: '\u2288', nsupseteq: '\u2289',
+    lesssim: '\u2272', gtrsim: '\u2273', lessgtr: '\u2276', gtrless: '\u2277',
+    ll: '\u226a', gg: '\u226b', prec: '\u2aaf', succ: '\u2ab0',
+    preceq: '\u2aaf', succeq: '\u2ab0',
+    asymp: '\u224d', doteq: '\u2250', triangleq: '\u225c',
+    nequiv: '\u2262', ncong: '\u2247', nsim: '\u2241', napprox: '\u2249',
+    vdash: '\u22a2', dashv: '\u22a3', models: '\u22a8',
+    top: '\u22a4', bot: '\u22a5', complement: '\u2201',
+    dagger: '\u2020', ddagger: '\u2021', checkmark: '\u2713',
+    lozenge: '\u25ca', blacksquare: '\u25a0', bigcirc: '\u25ef',
+    hbar: '\u210f', ell: '\u2113', aleph: '\u2135', wp: '\u2118',
+    Re: '\u211c', Im: '\u2111', mho: '\u2127', degree: '\u00b0',
+    prime: '\u2032', backprime: '\u2035', section: '\u00a7',
+    coloneq: '\u2254', eqcolon: '\u2255',
+  };
+  for (var _k in SYMBOLS_EXTRA) {
+    if (SYMBOLS[_k] === undefined) SYMBOLS[_k] = SYMBOLS_EXTRA[_k];
+  }
+
 
   var FUNCTIONS = {
     sin: true, cos: true, tan: true, cot: true, sec: true, csc: true,
@@ -556,6 +583,9 @@
           lbrace: '{', rbrace: '}', langle: '\u27e8', rangle: '\u27e9',
           lceil: '\u2308', rceil: '\u2309', lfloor: '\u230a', rfloor: '\u230b',
           vert: '|', Vert: '\u2016', lvert: '|', rvert: '|', mid: '|',
+          lVert: '\u2016', rVert: '\u2016', lVert: '\u2016',
+          uparrow: '\u2191', downarrow: '\u2193', updownarrow: '\u2195',
+          Uparrow: '\u21d1', Downarrow: '\u21d3', Updownarrow: '\u21d5',
           backslash: '\\'
         };
         return map[name] !== undefined ? map[name] : '\\' + name;
@@ -724,11 +754,99 @@
         (name === 'qquad' ? '\u2003\u2003' : '\u2003') + '</span>';
     }
 
+    // ---- 常见命令的兜底：不认识就原样漏出 \\xxx，看起来像“崩了” ----
+    var WRAP_COMMANDS = {
+      text: 1, textrm: 1, textsf: 1, texttt: 1, textbf: 1, textit: 1,
+      mathrm: 1, mathbf: 1, mathit: 1, mathsf: 1, mathtt: 1, mathbb: 1,
+      mathcal: 1, mathfrak: 1, boldsymbol: 1, operatorname: 1,
+      overline: 1, underline: 1, hat: 1, widehat: 1, bar: 1, vec: 1,
+      tilde: 1, widetilde: 1, dot: 1, ddot: 1, overrightarrow: 1,
+      overleftarrow: 1, underbrace: 1, overbrace: 1,
+    };
+    if (WRAP_COMMANDS[name]) {
+      var wrapped = this.parseArgument();
+      if (name === 'boxed') {
+        return '<span class="math-boxed" style="border:1px solid currentColor;' +
+          'padding:0 .25em;border-radius:3px">' + wrapped + '</span>';
+      }
+      if (name === 'overline' || name === 'bar') {
+        return '<span style="text-decoration:overline">' + wrapped + '</span>';
+      }
+      if (name === 'underline') {
+        return '<span style="text-decoration:underline">' + wrapped + '</span>';
+      }
+      if (name === 'vec' || name === 'overrightarrow') {
+        return '<span style="position:relative">' + wrapped +
+          '<span style="position:absolute;left:0;right:0;top:-0.55em;text-align:center">→</span></span>';
+      }
+      return wrapped;
+    }
+
+    if (name === 'boxed') {
+      return '<span class="math-boxed" style="border:1px solid currentColor;' +
+        'padding:0 .25em;border-radius:3px">' + this.parseArgument() + '</span>';
+    }
+
+    var NOOP_COMMANDS = {
+      displaystyle: 1, textstyle: 1, scriptstyle: 1, scriptscriptstyle: 1,
+      limits: 1, nolimits: 1, nonumber: 1, notag: 1, hfill: 1, strut: 1,
+      qquad: 0, quad: 0,
+    };
+    if (NOOP_COMMANDS[name]) {
+      return '';
+    }
+
+    var DROP_ARG_COMMANDS = {
+      label: 1, color: 1, phantom: 1, vphantom: 1, hphantom: 1,
+      hspace: 1, vspace: 1, mspace: 1, kern: 1, clap: 1, mathstrut: 1,
+    };
+    if (DROP_ARG_COMMANDS[name]) {
+      this.parseArgument();
+      return '';
+    }
+
+    if (name === 'tag') {
+      var tagText = this.parseArgument();
+      return '<span class="math-tag" style="margin-left:.6em">(' + tagText + ')</span>';
+    }
+
+    if (name === 'pmod') {
+      return ' <span class="math-fn" style="font-style:normal">(mod ' +
+        this.parseArgument() + ')</span>';
+    }
+    if (name === 'bmod' || name === 'mod') {
+      return ' <span class="math-fn" style="font-style:normal">mod</span> ';
+    }
+    if (name === 'binom') {
+      var top = this.parseArgument();
+      var bottom = this.parseArgument();
+      return 'C(' + top + '\u2009,\u2009' + bottom + ')';
+    }
+    if (name === 'substack') {
+      return this.parseArgument();
+    }
+    if (name === 'overset' || name === 'underset') {
+      this.parseArgument();
+      return this.parseArgument();
+    }
+    if (name === 'lVert' || name === 'rVert' || name === 'Vert') {
+      return '\u2016';
+    }
+    if (name === 'lvert' || name === 'rvert' || name === 'vert') {
+      return '|';
+    }
+    if (name === 'qed') {
+      return '\u220e';
+    }
+
     if (GREEK[name] !== undefined) {
       return GREEK[name];
     }
     if (SYMBOLS[name] !== undefined) {
       return SYMBOLS[name];
+    }
+    if (name === 'not') {
+      return '\u2260';
     }
     if (FUNCTIONS[name]) {
       return '<span class="math-fn math-roman" style="font-style:normal">' +
@@ -953,8 +1071,24 @@
       rowHtml.join('') + '</span>';
   };
 
+  var NOT_MAP = {
+    '\\in': '\\notin', '\\subset': '\\nsubset', '\\supset': '\\nsupset',
+    '\\equiv': '\\nequiv', '\\cong': '\\ncong', '\\sim': '\\nsim',
+    '\\approx': '\\napprox', '\\le': '\\nleq', '\\leq': '\\nleq',
+    '\\ge': '\\ngeq', '\\geq': '\\ngeq', '\\mid': '\\nmid',
+    '\\parallel': '\\nparallel', '\\ni': '\\nsupset',
+    '=': '\\neq', '<': '\\nless', '>': '\\ngtr'
+  };
+
+  // “\not\in” 这类组合 TeX 里很常见，渲染器不认识 \not 就会漏出字面量
+  function normalizeNot(text) {
+    return text.replace(/\\not\s*(\\[a-zA-Z]+|=|<|>)/g, function (m, token) {
+      return NOT_MAP[token] || '\\neq';
+    });
+  }
+
   function tex(source, display) {
-    var src = String(source == null ? '' : source);
+    var src = normalizeNot(String(source == null ? '' : source));
     var body;
     try {
       body = new TexParser(src, !!display).parse();

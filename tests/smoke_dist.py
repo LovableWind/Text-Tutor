@@ -41,8 +41,13 @@ def main():
     INT = os.path.join(DIST, "_internal")
     py = os.path.join(INT, "runtime", "python.exe")
     check("runtime exists", os.path.exists(py), py)
-    check("launcher exists", os.path.exists(os.path.join(DIST, "启动旁批.bat")))
-    check("docs shipped", os.path.exists(os.path.join(DIST, "使用说明.md")))
+    check("launcher exists", os.path.exists(os.path.join(DIST, "旁批.exe")))
+    check("guide at top level", os.path.exists(os.path.join(DIST, "使用说明.md")))
+    check("readme inside _internal", os.path.exists(os.path.join(INT, "README.md")))
+    check("top level is clean",
+          sorted(n for n in os.listdir(DIST) if n not in ("data",)) ==
+          ["_internal", "使用说明.md", "旁批.exe"],
+          sorted(os.listdir(DIST)))
     check("sample shipped", os.path.exists(os.path.join(INT, "samples", "示例讲义.pdf")))
     check("internal only", not os.path.exists(os.path.join(DIST, "app")))
     check("icon shipped", os.path.exists(os.path.join(INT, "web", "favicon.ico")))
