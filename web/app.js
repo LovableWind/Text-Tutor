@@ -248,6 +248,83 @@
     });
   }
 
+  // 把讲解里的“第 3 页”“第2讲……第 4 页”变成可点的跳转
+  function annotatePageRefs(root, card) {
+    const hasCtx = (S.corpus && S.corpus.ready) || (S.handout && S.handout.ready);
+    if (!hasCtx || !root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        let p = node.parentNode;
+        while (p && p !== root) {
+          const tag = p.tagName;
+          if (p.classList && p.classList.contains("math")) return NodeFilter.FILTER_REJECT;
+          if (tag === "CODE" || tag === "PRE" || tag === "A" || tag === "BUTTON") return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return /第\s*\d{1,3}\s*页/.test(node.nodeValue)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    });
+
+    const targets = [];
+    while (walker.nextNode()) targets.push(walker.currentNode);
+
+    for (const node of targets) {
+      const text = node.nodeValue;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      const re = /第\s*(\d{1,3})\s*页/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const before = text.slice(last, m.index);
+        if (before) frag.appendChild(document.createTextNode(before));
+
+        const page = parseInt(m[1], 10);
+        // 同一行里如果前面写过“第N讲”，就用那一讲
+        const head = text.slice(Math.max(0, m.index - 40), m.index);
+        const docMatch = /第\s*(\d{1,2})\s*讲/g;
+        let dm = null;
+        let tmp;
+        while ((tmp = docMatch.exec(head)) !== null) dm = tmp;
+        const docIndex = dm ? parseInt(dm[1], 10) - 1 : (card.doc || 0);
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "jump";
+        btn.textContent = m[0];
+        btn.title = "跳到第" + (docIndex + 1) + "讲第" + page + "页";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          jumpTo(docIndex, page);
+        });
+        frag.appendChild(btn);
+        last = m.index + m[0].length;
+      }
+      if (last === 0) continue;
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+
+  async function jumpTo(doc, page) {
+    try {
+      if (S.corpus && S.corpus.ready) {
+        const res = await api("/api/corpus/position", { method: "POST", body: { doc, page } });
+        applyCorpus(res.corpus);
+      } else {
+        await api("/api/page", { method: "POST", body: { page } });
+        S.page = page;
+      }
+      renderAll();
+      const cur = S.corpus && S.corpus.ready ? S.corpus.current : null;
+      toast(cur ? "已切到 " + cur.name.replace(/\.(pptx|pdf)$/i, "") + " 第 " + page + " 页"
+                : "已切到第 " + page + " 页");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
   function buildCard(card, opts = {}) {
     const el = document.createElement("article");
     el.className = "card" + (card.mode === "hint" ? " is-hint" : "") +
@@ -332,6 +409,7 @@
     answer.className = "answer";
     const text = card.answer || opts.partial || "";
     answer.innerHTML = text ? renderAnswer(text) : "";
+    if (text) annotatePageRefs(answer, card);
     el.appendChild(answer);
 
     if (card.status === "streaming" && !text) {
@@ -465,6 +543,7 @@
       renderQueued = false;
       lastRender = Date.now();
       answerEl.innerHTML = pending.buf ? renderAnswer(pending.buf) : "";
+      annotatePageRefs(answerEl, card);
       const feed = $("#feed");
       if (feed.scrollHeight - feed.scrollTop - feed.clientHeight < 160) feed.scrollTop = feed.scrollHeight;
     };

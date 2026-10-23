@@ -1357,3 +1357,27 @@ hr { border: 0; border-top: 1px solid var(--line-soft); margin: 18px 0 12px; }
   font: 12px/1.6 var(--mono);
   white-space: pre-wrap;
 }
+
+
+/* 可点击的页码跳转 */
+.jump {
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.94em;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 2px;
+  transition: background .12s, color .12s;
+}
+
+.jump:hover {
+  background: var(--accent);
+  color: #1a1206;
+  text-decoration: none;
+}
