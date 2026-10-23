@@ -27,8 +27,26 @@ jobs:
       - name: 端到端（假模型，不需要 API Key）
         run: python tests/e2e.py
 
+      - name: 多课件端到端
+        run: python tests/e2e_corpus.py
+
       - name: 讲义边界（离线）
         run: python tests/test_scope.py
+
+      - name: 公式识别
+        run: python tests/test_formula.py
+
+      - name: 讲次排序
+        run: python tests/test_ordering.py
+
+      - name: 学科隔离
+        run: python tests/test_profiles.py
+
+      - name: 题型判定
+        run: python tests/test_exercise.py
+
+      - name: 取词去重
+        run: python tests/test_capture.py
 
       - name: 前端接线检查
         run: python tests/check_wiring.py
