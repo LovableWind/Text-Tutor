@@ -1,6 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1d1f24"/>
-  <rect x="8" y="8" width="48" height="48" rx="9" fill="#d99a5b"/>
-  <path d="M22 46V18h8.5c6.4 0 10.5 3.4 10.5 8.7 0 3.6-2 6.3-5.4 7.6l7 11.7h-5.9l-6.2-10.8H27V46zm5-15h3.2c3.3 0 5.2-1.6 5.2-4.1 0-2.6-1.9-4-5.2-4H27z" fill="#1a1206"/>
-  <path d="M14 52h36" stroke="#1a1206" stroke-width="2.2" stroke-linecap="round" opacity=".35"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#1d1f24"/>
+  <rect x="112" y="124" width="292" height="308" rx="26" fill="#000" opacity=".24"/>
+  <rect x="104" y="112" width="304" height="312" rx="26" fill="#f3eee4"/>
+  <rect x="148" y="154" width="8" height="218" rx="4" fill="#d99a5b"/>
+  <rect x="178" y="202" width="182" height="30" rx="12" fill="#d99a5b" opacity=".43"/>
+  <g stroke="#2b2a26" stroke-width="16" stroke-linecap="round">
+    <line x1="190" y1="166" x2="370" y2="166"/>
+    <line x1="190" y1="217" x2="340" y2="217"/>
+    <line x1="190" y1="268" x2="358" y2="268"/>
+    <line x1="190" y1="318" x2="286" y2="318"/>
+  </g>
 </svg>

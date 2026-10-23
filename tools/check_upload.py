@@ -14,7 +14,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 FOLDERS = ["app", "web", "tools", "tests", "samples", ".github"]
-ROOT_FILES = ["README.md", "使用说明.md", "LICENSE", ".gitignore", ".gitattributes"]
+ROOT_FILES = ["README.md", "使用说明.md", "LICENSE", "CHANGELOG.md", ".gitignore", ".gitattributes"]
 
 # 这些出现在上传清单里就是错的
 BAD_SUFFIX = (".pyc", ".pyo", ".pyd", ".log", ".tmp", ".swp")

@@ -38,18 +38,21 @@ def free_port():
 
 
 def main():
-    py = os.path.join(DIST, "runtime", "python.exe")
+    INT = os.path.join(DIST, "_internal")
+    py = os.path.join(INT, "runtime", "python.exe")
     check("runtime exists", os.path.exists(py), py)
     check("launcher exists", os.path.exists(os.path.join(DIST, "启动旁批.bat")))
     check("docs shipped", os.path.exists(os.path.join(DIST, "使用说明.md")))
-    check("sample shipped", os.path.exists(os.path.join(DIST, "samples", "示例讲义.pdf")))
+    check("sample shipped", os.path.exists(os.path.join(INT, "samples", "示例讲义.pdf")))
+    check("internal only", not os.path.exists(os.path.join(DIST, "app")))
+    check("icon shipped", os.path.exists(os.path.join(INT, "web", "favicon.ico")))
 
     shutil.rmtree(DATA, ignore_errors=True)
     os.makedirs(DATA, exist_ok=True)
     mock_port = free_port()
     mock = subprocess.Popen([sys.executable, os.path.join(HERE, "mock_llm.py"), str(mock_port),
                              os.path.join(DATA, "sys.txt")])
-    srv = subprocess.Popen([py, os.path.join(DIST, "app", "server.py"), "--no-window", "--no-hotkey",
+    srv = subprocess.Popen([py, os.path.join(INT, "app", "server.py"), "--no-window", "--no-hotkey",
                             "--keep-alive", "--data-dir", DATA],
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
@@ -80,7 +83,7 @@ def main():
         urllib.request.urlopen(urllib.request.Request(
             base + "/api/settings", data=json.dumps(payload).encode(), headers=H, method="POST"))
 
-        pdf = open(os.path.join(DIST, "samples", "示例讲义.pdf"), "rb").read()
+        pdf = open(os.path.join(INT, "samples", "示例讲义.pdf"), "rb").read()
         hh = dict(H)
         hh["X-Filename"] = "sample.pdf"
         urllib.request.urlopen(urllib.request.Request(base + "/api/handout", data=pdf, headers=hh, method="POST"))

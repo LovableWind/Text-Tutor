@@ -98,11 +98,12 @@ python app\server.py --no-window     # 只起服务，浏览器手动开 http://
 ## 测试
 
 ```powershell
-python tests\e2e.py            # 31 项端到端断言（本地假模型，不需要真 Key）
+python tests\e2e.py            # 48 项端到端断言（本地假模型，不需要真 Key）
 python tests\test_scope.py     # 22 项离线边界断言：后页正文一个字都不进提示词
 python tests\test_formula.py   # 27 项公式识别断言（什么算残缺公式、什么算题干）
 python tests\e2e_corpus.py     # 16 项多课件端到端：排序、跨讲定位、⏭ 引用
-python tests\test_ordering.py  # 29 项讲次识别与排序：LECTURE_01 / 第一讲 / Chapter 1 / 一 二
+python tests\test_ordering.py  # 29 项讲次识别与排序
+python tests\test_capture.py   # 6 项取词去重：一次截图只出一张卡
 python tests\test_profiles.py  # 18 项学科隔离：数学规则不许漏进人文，反之亦然
 python tests\test_exercise.py  # 23 项题型判定：没有"习题"二字也要认出是题
 python tests\audit_grounding.py  # 真模型 11 例：越界引用 / 编造编号 / 标注缺失
@@ -128,6 +129,45 @@ python tools\check_upload.py   # 打印这次会传多少文件，有脏东西�
 ```
 
 `check_upload.py` 只读，列出 app/web/tools/tests/samples/.github 与根目录文档，发现 `.pyc`、`dist/`、`data/`、`.tmp*` 就返回非零。
+
+## 目录结构
+
+```
+margin-tutor/
+├─ app/            后端（标准库，无第三方依赖）
+│   ├─ server.py       本地 HTTP + SSE 服务、窗口管理
+│   ├─ handout.py      讲义解析、目录、关键点
+│   ├─ corpus.py       多课件库、讲次排序、已讲范围
+│   ├─ prompts.py      提示词组装
+│   ├─ profiles.py     数学 / 人文两套独立配置
+│   ├─ exercise.py     题型判定（结构打分 + 模型兜底）
+│   ├─ guard.py        越界自查
+│   ├─ formula.py      残缺公式识别
+│   ├─ pdftext.py / pptxtext.py   纯 Python 提取文字
+│   ├─ llm.py          模型调用（Anthropic / OpenAI 兼容）
+│   └─ win32.py        剪贴板、热键、窗口
+├─ web/            前端（无框架）
+│   ├─ index.html app.js styles.css
+│   ├─ math.js     TeX 子集渲染
+│   ├─ md.js       Markdown + 公式块
+│   └─ icon-*.png favicon.ico
+├─ tools/          构建与生成脚本
+├─ tests/          测试
+├─ samples/        示例讲义与课件
+├─ dist/           打包产物（不入库）
+└─ 启动旁批.bat → 便携包顶层启动器（由 build_portable 生成）
+```
+
+**便携包解压后的结构**（用户看到的）：
+
+```
+旁批/
+├─ 启动旁批.bat     ← 唯一需要双击的
+├─ 使用说明.md
+├─ README.md
+├─ LICENSE
+└─ _internal/       ← app / web / runtime / samples + 调试、退出两个 bat
+```
 
 ## 打包
 

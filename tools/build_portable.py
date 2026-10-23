@@ -63,18 +63,34 @@ def trim_runtime(src: str, dst: str) -> int:
 
 
 def write_launchers(dst: str):
+    """顶层只放一个启动器；程序本体都在 _internal\\ 里。"""
+    internal = os.path.join(dst, "_internal")
+    os.makedirs(internal, exist_ok=True)
+
     bat = r"""@echo off
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
-if not exist "runtime\pythonw.exe" (
-  echo 找不到内置运行时：runtime\pythonw.exe
-  echo 请重新解压完整压缩包，或安装 Python 3.10+ 后双击「调试启动.bat」。
+set "ROOT=%~dp0"
+
+if not exist "_internal\runtime\pythonw.exe" (
+  echo.
+  echo   找不到程序文件：_internal\runtime\pythonw.exe
+  echo   请解压整个压缩包，不要只复制其中几个文件。
+  echo.
   pause
   exit /b 1
 )
+
 if not exist "data" mkdir "data"
-start "" "runtime\pythonw.exe" "app\server.py" >> "data\app.log" 2>&1
+
+rem 首次运行：去掉 Windows 给下载文件加的“来自 Internet”标记，只影响本文件夹
+if not exist "data\.unblocked" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '$env:ROOT' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1
+  echo ok> "data\.unblocked"
+)
+
+start "" "_internal\runtime\pythonw.exe" "_internal\app\server.py" --data-dir "%ROOT%data" >> "data\app.log" 2>&1
 """
     with open(os.path.join(dst, "启动旁批.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(bat)
@@ -84,40 +100,26 @@ chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 if exist "runtime\python.exe" (
-  "runtime\python.exe" "app\server.py" %*
+  "runtime\python.exe" "app\server.py" --data-dir "%~dp0..\data" %*
 ) else (
-  python "app\server.py" %*
+  python "app\server.py" --data-dir "%~dp0..\data" %*
 )
 echo.
 echo 服务已退出。
 pause
 """
-    with open(os.path.join(dst, "调试启动.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
+    with open(os.path.join(internal, "调试启动.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(dbg)
-
-    unblock_bat = r"""@echo off
-chcp 65001 >nul
-setlocal
-cd /d "%~dp0"
-echo 正在解除 Windows 对下载文件的锁定（只影响本文件夹，不改系统设置）...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "Get-ChildItem -LiteralPath '%~dp0' -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue"
-echo.
-echo 完成。以后双击「启动旁批.bat」不会再弹「此文件可能有害」。
-timeout /t 3 >nul
-"""
-    with open(os.path.join(dst, "解除锁定.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
-        fh.write(unblock_bat)
 
     quit_bat = r"""@echo off
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p='%~dp0data\server.json'; if (Test-Path $p) { $j=Get-Content $p -Raw | ConvertFrom-Json; Stop-Process -Id $j.pid -Force -ErrorAction SilentlyContinue; Write-Host '已退出旁批' } else { Write-Host '旁批没有在运行' }"
+  "$p='%~dp0..\data\server.json'; if (Test-Path $p) { $j=Get-Content $p -Raw | ConvertFrom-Json; Stop-Process -Id $j.pid -Force -ErrorAction SilentlyContinue; Write-Host '已退出旁批' } else { Write-Host '旁批没有在运行' }"
 timeout /t 2 >nul
 """
-    with open(os.path.join(dst, "退出旁批.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
+    with open(os.path.join(internal, "退出旁批.bat"), "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(quit_bat)
 
 
@@ -127,22 +129,25 @@ def build(zip_it=True, runtime_src=None):
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out, exist_ok=True)
 
-    copytree(os.path.join(ROOT, "app"), os.path.join(out, "app"),
+    internal = os.path.join(out, "_internal")
+    os.makedirs(internal, exist_ok=True)
+
+    copytree(os.path.join(ROOT, "app"), os.path.join(internal, "app"),
              ignore=lambda d, names: {n for n in names if n in ("__pycache__", ".pytest_cache")})
-    copytree(os.path.join(ROOT, "web"), os.path.join(out, "web"),
+    copytree(os.path.join(ROOT, "web"), os.path.join(internal, "web"),
              ignore=lambda d, names: {n for n in names if n == "tests"})
-    copytree(os.path.join(ROOT, "samples"), os.path.join(out, "samples"), ignore=None)
-    for doc in ("README.md", "使用说明.md", "LICENSE"):
+    copytree(os.path.join(ROOT, "samples"), os.path.join(internal, "samples"), ignore=None)
+    for doc in ("README.md", "使用说明.md", "LICENSE", "CHANGELOG.md"):
         src = os.path.join(ROOT, doc)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(out, doc))
 
     print("copying runtime from", runtime_src)
-    size = trim_runtime(runtime_src, os.path.join(out, "runtime"))
+    size = trim_runtime(runtime_src, os.path.join(internal, "runtime"))
     print("runtime trimmed to", human(size))
     lic = os.path.join(runtime_src, "LICENSE.txt")
     if os.path.exists(lic):
-        shutil.copy2(lic, os.path.join(out, "runtime", "PYTHON-LICENSE.txt"))
+        shutil.copy2(lic, os.path.join(internal, "runtime", "PYTHON-LICENSE.txt"))
 
     write_launchers(out)
 
@@ -153,7 +158,7 @@ def build(zip_it=True, runtime_src=None):
     print("bundle size:", human(total))
 
     # smoke test the bundled interpreter
-    py = os.path.join(out, "runtime", "python.exe")
+    py = os.path.join(internal, "runtime", "python.exe")
     if os.path.exists(py):
         proc = subprocess.run(
             [py, "-c", "import json,ctypes,http.server,urllib.request,zlib;print('runtime ok')"],

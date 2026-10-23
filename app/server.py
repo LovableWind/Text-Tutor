@@ -36,7 +36,7 @@ import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.1.3"
+VERSION = "1.2.0"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -520,7 +520,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path_only == "/guide":
                 return self._serve_guide()
             if self.path_only == "/favicon.ico":
-                return self._serve_static("favicon.svg")
+                return self._serve_static("favicon.ico")
+            if self.path_only in ("/icon-256.png", "/icon-512.png", "/apple-touch-icon.png"):
+                return self._serve_static(self.path_only.lstrip("/"))
             if not self.path_only.startswith("/api/"):
                 return self._send_json({"error": "not found"}, 404)
             if self.path_only == "/api/ping":
@@ -671,11 +673,19 @@ class Handler(BaseHTTPRequestHandler):
         self._send_bytes(data, ctype, cache=cacheable)
 
     def _serve_guide(self):
-        path = os.path.join(ROOT, "使用说明.md")
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                text = fh.read()
-        except OSError:
+        text = None
+        # 便携版把说明书放在顶层（程序在 _internal/app），开发时就在项目根
+        for cand in (
+            os.path.join(ROOT, "使用说明.md"),
+            os.path.join(os.path.dirname(ROOT), "使用说明.md"),
+        ):
+            try:
+                with open(cand, "r", encoding="utf-8") as fh:
+                    text = fh.read()
+                break
+            except OSError:
+                continue
+        if text is None:
             text = "使用说明.md 不存在（便携包里应该有这个文件）。"
         import html as _html
 
