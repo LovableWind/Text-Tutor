@@ -9,6 +9,8 @@
 
 <img src="web/icon-256.png" width="96" align="right" alt="旁批图标">
 
+** 联系作者(Contact the conductor): QQ:2122297339 / Wechat: Kazekami23 **
+
 支持 Windows 10 / 11 · 解压即用 · 自带 Python 运行时 · 需要自己的 API Key（一次讲解不到一分钱）
 
 > 界面截图放在这里：左边 PDF 阅读器，右边旁批侧栏。
