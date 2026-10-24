@@ -11,7 +11,7 @@
 
 支持 Windows 10 / 11 · 解压即用 · 自带 Python 运行时 · 需要自己的 API Key（一次讲解不到一分钱）
 
-![Uploading 屏幕截图 2026-10-24 100627.png…]()
+<img src="docs/screenshot.png" width="760" alt="旁批界面：左边 PDF，右边讲解卡片">
 
 ---
 
