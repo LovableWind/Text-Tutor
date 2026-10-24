@@ -5,7 +5,7 @@
 读讲义卡住时，通用 AI 会把最漂亮的解法给你——包括你还没学的。旁批知道你读到第几讲第几页：超出进度的内容必须标出来源，讲义里没有的必须说明是补充。
 
 [![下载](https://img.shields.io/badge/%E2%AC%87_%E4%B8%8B%E8%BD%BD_Windows_%E4%BE%BF%E6%90%BA%E7%89%88-10_MB-d99a5b?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/LovableWind/Text-Tutor/releases/latest)
-[![版本](https://img.shields.io/github/v/release/LovableWind/Text-Tutor?color=d99a5b&label=version)](https://github.com/LovableWind/Text-Tutor/releases) [![平台](https://img.shields.io/badge/platform-Windows_10_%2F_11-555555)](https://github.com/LovableWind/Text-Tutor/releases/latest)
+[![版本](https://img.shields.io/github/v/release/LovableWind/Text-Tutor?color=d99a5b&label=version)](https://github.com/LovableWind/Text-Tutor/releases/latest) [![平台](https://img.shields.io/badge/platform-Windows_10_%2F_11-555555)](https://github.com/LovableWind/Text-Tutor/releases/latest)
 
 <img src="web/icon-256.png" width="96" align="right" alt="旁批图标">
 
