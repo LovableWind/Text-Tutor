@@ -231,6 +231,26 @@ def main():
                                  json.dumps({"text": "可导必连续，连续不一定可导"}).encode(), H).read())
         check("locate page", res.get("page") == 3, res)
 
+        # 9b2. page text for the citation preview
+        res = json.loads(request(base + "/api/page/text", "POST",
+                                 json.dumps({"page": 1}).encode(), H).read())
+        check("page text returns body", len(res.get("text") or "") > 20, res.get("text", "")[:40])
+        check("page text has total", res.get("total", 0) >= 1)
+        res = json.loads(request(base + "/api/page/text", "POST",
+                                 json.dumps({"page": 999}).encode(), H).read())
+        check("page clamped", res.get("page") <= res.get("total", 1), res)
+
+        # 9a2. citation popup: passage + marginal note (mock model answers everything)
+        res = json.loads(request(base + "/api/page/peek", "POST",
+                                 json.dumps({"page": 2, "label": "定理 1.4"}).encode(), H).read())
+        check("peek has no original text", "passage" not in res, list(res)[:6])
+        check("peek returns note", bool(res.get("note")), res.get("note", "")[:40])
+        check("peek echoes label", res.get("label") == "定理 1.4", res.get("label"))
+        check("peek carries page meta", res.get("total", 0) >= 1 and res.get("page") == 2)
+        res2 = json.loads(request(base + "/api/page/peek", "POST",
+                                  json.dumps({"page": 2, "label": "定理 1.4"}).encode(), H).read())
+        check("peek caches repeats", res2.get("cached") is True, res2.get("cached"))
+
         # 9b. the guide page and the "new set of handouts" reset
         guide = request(base + "/guide").read().decode("utf-8")
         check("guide page served", "使用说明" in guide or "旁批" in guide, len(guide))

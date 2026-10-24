@@ -14,6 +14,7 @@ import time
 import uuid
 
 import handout as handout_mod
+import ppttext
 import pptxtext
 
 SUFFIX = re.compile(r"\.(pptx|ppt|pdf)$", re.I)
@@ -110,16 +111,18 @@ def build_doc(name: str, data: bytes) -> dict:
         quality = "text" if sum(len(p["text"]) for p in pages) > 40 else "poor"
         domain = handout_mod.detect_domain(pages)
     elif lower.endswith(".ppt"):
-        raise pptxtext.PptxError("旧版 .ppt 不支持，请先另存为 .pptx")
+        pages = ppttext.extract_pages(data)
+        quality = "text" if sum(len(p["text"]) for p in pages) > 40 else "poor"
+        domain = handout_mod.detect_domain(pages)
     else:
-        raise pptxtext.PptxError("只支持 .pptx / .pdf")
+        raise pptxtext.PptxError("只支持 .pptx / .ppt / .pdf")
 
     pages = [{"n": int(p["n"]), "text": (p.get("text") or "").strip()} for p in pages]
     return {
         "id": uuid.uuid4().hex[:10],
         "name": name,
         "ordinal": ordinal_of(name),
-        "kind": "pptx" if lower.endswith(".pptx") else "pdf",
+        "kind": "ppt" if lower.endswith(".ppt") else ("pptx" if lower.endswith(".pptx") else "pdf"),
         "domain": domain,
         "pages": pages,
         "outline": handout_mod.detect_outline(pages),

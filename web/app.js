@@ -310,10 +310,13 @@
         btn.type = "button";
         btn.className = "jump";
         btn.textContent = m[0];
-        btn.title = "跳到第" + (docIndex + 1) + "讲第" + page + "页";
+        const label = labelNearby(text, m.index, m[0].length);
+        btn.title = label
+          ? "看「" + label + "」的边注（第" + page + "页）"
+          : "看第 " + page + " 页的边注";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          jumpTo(docIndex, page);
+          openPeek(btn, docIndex, page, label);
         });
         frag.appendChild(btn);
         last = m.index + m[0].length;
@@ -322,6 +325,92 @@
       if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
       node.parentNode.replaceChild(frag, node);
     }
+  }
+
+  let peekReturnFocus = null;
+
+  // 引用旁边通常会写「定理 1.4」「定义 2.1」「2.2 节」，取最近的一个
+  function labelNearby(text, index, length) {
+    const around = text.slice(Math.max(0, index - 40), index + length + 40);
+    const named = around.match(/(定理|定义|引理|推论|命题|公式|推论|例)\s*\d+(?:[.．]\d+)*/);
+    if (named) return named[0].replace(/\s+/g, " ").replace(/．/g, ".").trim();
+    const section = around.match(/(?:第\s*)?\d+(?:[.．]\d+)+\s*节|§\s*\d+(?:\.\d+)*/);
+    if (section) return section[0].replace(/\s+/g, " ").replace(/．/g, ".").trim();
+    return "";
+  }
+
+  async function openPeek(btn, doc, page, label) {
+    const peek = $("#pagePeek");
+    const body = $("#peekBody");
+    const title = $("#peekTitle");
+    if (!peek) return;
+
+    peekReturnFocus = btn || null;
+    peek.hidden = false;
+    peek.dataset.doc = doc;
+    peek.dataset.page = page;
+    title.textContent = "第 " + page + " 页";
+    body.innerHTML = '<div class="peek-loading">正在读取原文…</div>';
+    placePeek(peek, btn);
+
+    try {
+      const res = await api("/api/page/peek", { method: "POST", body: { doc, page, label: label || "" } });
+      const head = [];
+      if (res.name) head.push(res.name.replace(/\.(pptx|ppt|pdf)$/i, ""));
+      if (res.section) head.push(res.section);
+      if (res.label) head.push(res.label);
+      head.push("第 " + res.page + " / " + res.total + " 页");
+      title.textContent = head.join(" · ");
+      peek.dataset.doc = res.doc;
+      peek.dataset.page = res.page;
+      renderPeek(body, res);
+      placePeek(peek, btn);
+    } catch (err) {
+      body.innerHTML = '<div class="peek-loading">读不到这一页：' + escapeHtml(err.message) + "</div>";
+    }
+  }
+
+  // 只渲染边注本身
+  function renderPeek(body, res) {
+    const parts = [];
+    if (res.note) {
+      const head = res.label ? "旁批 · " + res.label : "旁批";
+      parts.push('<div class="peek-sec"><div class="peek-label">' + escapeHtml(head) + "</div>");
+      parts.push('<div class="peek-text">' + renderAnswer(res.note) + "</div></div>");
+    } else {
+      parts.push('<div class="peek-loading">这一页没有可用的边注。</div>');
+    }
+    body.innerHTML = parts.join("");
+  }
+
+  function placePeek(peek, btn) {
+    const gap = 8;
+    const width = peek.offsetWidth || 320;
+    const height = peek.offsetHeight || 220;
+    let rect = null;
+    try { rect = btn ? btn.getBoundingClientRect() : null; } catch (e) { rect = null; }
+    const vw = window.innerWidth || 420;
+    const vh = window.innerHeight || 700;
+    let left = rect ? rect.left - 24 : (vw - width) / 2;
+    let top = rect ? rect.bottom + gap : vh / 3;
+
+    left = Math.max(gap, Math.min(left, vw - width - gap));
+    if (top + height > vh - gap) {
+      const above = rect ? rect.top - height - gap : 0;
+      top = above > gap ? above : Math.max(gap, vh - height - gap);
+    }
+    peek.style.left = Math.round(left) + "px";
+    peek.style.top = Math.round(top) + "px";
+  }
+
+  function closePeek() {
+    const peek = $("#pagePeek");
+    if (!peek || peek.hidden) return;
+    peek.hidden = true;
+    if (peekReturnFocus && peekReturnFocus.focus) {
+      try { peekReturnFocus.focus(); } catch (e) {}
+    }
+    peekReturnFocus = null;
   }
 
   async function jumpTo(doc, page) {
@@ -335,7 +424,7 @@
       }
       renderAll();
       const cur = S.corpus && S.corpus.ready ? S.corpus.current : null;
-      toast(cur ? "已切到 " + cur.name.replace(/\.(pptx|pdf)$/i, "") + " 第 " + page + " 页"
+      toast(cur ? "已切到 " + cur.name.replace(/\.(pptx|ppt|pdf)$/i, "") + " 第 " + page + " 页"
                 : "已切到第 " + page + " 页");
     } catch (err) {
       toast(err.message, "error");
@@ -821,8 +910,8 @@
   // ---------------------------------------------------------------- handout
 
   async function uploadFiles(files) {
-    const list = Array.from(files || []).filter((f) => /\.(pptx|pdf)$/i.test(f.name));
-    if (!list.length) { toast("请选择 PPTX 或 PDF", "error"); return; }
+    const list = Array.from(files || []).filter((f) => /\.(pptx|ppt|pdf)$/i.test(f.name));
+    if (!list.length) { toast("请选择 PPTX / PPT / PDF", "error"); return; }
     const dz = $("#handoutEmpty");
     let done = 0;
     for (const f of list) {
@@ -1008,7 +1097,7 @@
       const name = document.createElement("button");
       name.className = "doc-name";
       name.type = "button";
-      name.textContent = doc.name.replace(/\.(pptx|pdf)$/i, "");
+      name.textContent = doc.name.replace(/\.(pptx|ppt|pdf)$/i, "");
       name.title = doc.name + (doc.quality && doc.quality !== "text" ? "（文字层可能不完整）" : "");
       name.addEventListener("click", () => selectDoc(idx));
 
@@ -1239,7 +1328,7 @@
     return el;
   }
 
-  const UI_VERSION = "2026-10-23-4";
+  const UI_VERSION = "2026-10-24-2";
 
   function checkUIVersion() {
     const meta = document.querySelector('meta[name="pangbi-ui"]');
@@ -1269,6 +1358,7 @@
 
   function wire() {
     on("#settingsBtn", "click", () => openPanel("settings"));
+    on("#peekClose", "click", closePeek);
     on("#onboardKey", "click", () => openPanel("settings"));
     on("#onboardDeck", "click", () => openPanel("handout"));
     on("#helpBtn", "click", () => showWelcome(true));
@@ -1408,8 +1498,18 @@
       if (e.target && e.target.id === "welcome") closeWelcome();
     });
 
+    document.addEventListener("mousedown", (e) => {
+      const peek = $("#pagePeek");
+      if (!peek || peek.hidden) return;
+      if (peek.contains(e.target)) return;
+      if (e.target.classList && e.target.classList.contains("jump")) return;
+      closePeek();
+    });
+
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
+        const peek = $("#pagePeek");
+        if (peek && !peek.hidden) { closePeek(); return; }
         if (welcomeOpen()) { closeWelcome(); return; }
         if ($("#panel").classList.contains("open")) closePanel();
       }

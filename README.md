@@ -9,8 +9,6 @@
 
 <img src="web/icon-256.png" width="96" align="right" alt="旁批图标">
 
-**联系作者(Contact with the conductor): QQ:2122297339 / Wechat: Kazekami23**
-
 支持 Windows 10 / 11 · 解压即用 · 自带 Python 运行时 · 需要自己的 API Key（一次讲解不到一分钱）
 
 > 界面截图放在这里：左边 PDF 阅读器，右边旁批侧栏。
@@ -77,7 +75,7 @@ API Key 到 [DeepSeek 开放平台](https://platform.deepseek.com) 注册后创�
 
 ### 整学期课件
 
-把整个学期的 PPTX / PDF 一次拖进去，自动按讲次排序：
+把整个学期的 PPTX / PPT / PDF 一次拖进去，自动按讲次排序：
 
 - `LECTURE_01` / `Lecture 7` / `LEC-04` / `LECTER_07`（拼错也认）
 - `第一讲` / `第 3 讲` / `第十讲`
@@ -155,7 +153,8 @@ API Key 明文存在本机的 `data\settings.json`，只用于请求你自己填
 | 本地服务 | `app/server.py` | HTTP/SSE、会话状态、卡片持久化、静态资源 |
 | 取词 | `app/win32.py` | 剪贴板读写（文本/DIB→PNG）、全局热键、`Ctrl+C` 注入、置顶、拉起浏览器 |
 | PDF 索引 | `app/pdftext.py` | 纯 Python 解析（xref、对象流、Flate、Type0/Type3、ToUnicode） |
-| PPT 索引 | `app/pptxtext.py` | zipfile + ElementTree 读幻灯片文字与备注，零依赖 |
+| PPTX 索引 | `app/pptxtext.py` | zipfile + ElementTree 读幻灯片文字与备注，零依赖 |
+| PPT 索引 | `app/ppttext.py` | 旧版 `.ppt`：手写 OLE 复合文档 + 记录遍历，只取文字 |
 | 课件库 | `app/corpus.py` | 讲次排序（自然序 / 中文数字）、跨讲"已讲范围"、定位 |
 | 讲义处理 | `app/handout.py` | 分页文本、质量判定、目录识别、定位（精确→3-gram）、已讲要点 |
 | 题型判定 | `app/exercise.py` | 结构打分（祈使动词/问句/选项/填空）+ 模型兜底，判不准按题处理 |
@@ -188,6 +187,7 @@ python tests\test_ordering.py  # 29 项讲次识别与排序
 python tests\test_profiles.py  # 18 项学科隔离
 python tests\test_exercise.py  # 23 项题型判定
 python tests\test_capture.py   # 6 项取词去重
+python tests\test_ppt.py       # 15 项旧版 .ppt 解析
 python tests\check_wiring.py   # 前端 id 与版本号一致性
 node web\tests\test_math.mjs   # 167 条 TeX 渲染断言
 node web\tests\test_md.mjs     # Markdown 渲染
@@ -233,3 +233,7 @@ margin-tutor/
 ├─ dist/           打包产物（不入库）
 └─ 使用说明.md      面向用户的完整说明
 ```
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。

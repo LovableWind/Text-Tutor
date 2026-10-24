@@ -7,9 +7,9 @@
 <link rel="shortcut icon" href="/favicon.ico?v=3">
 <link rel="icon" type="image/png" href="/icon-256.png?v=3">
 <link rel="apple-touch-icon" href="/icon-256.png?v=3">
-<meta name="pangbi-ui" content="2026-10-23-4">
+<meta name="pangbi-ui" content="2026-10-24-2">
 <title>旁批 · 讲义伴读</title>
-<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/styles.css?v=2026-10-24-2">
 </head>
 <body>
 <div id="app">
@@ -54,7 +54,7 @@
         <li><span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>Alt</kbd><i>+</i><kbd>D</kbd></span><span class="desc">在任意 PDF 阅读器里取词（自动复制）</span></li>
         <li><span class="keys"><kbd>Win</kbd><i>+</i><kbd>Shift</kbd><i>+</i><kbd>S</kbd></span><span class="desc">截图圈选公式或手写内容</span></li>
       </ul>
-      <p class="empty-foot">第一次使用，先点右上角 <b>⚙</b> 填 API Key，再点顶部胶囊导入讲义 PDF。</p>
+      <p class="empty-foot">第一次使用，先点右上角 <b>⚙</b> 填 API Key，再点顶部胶囊导入讲义。</p>
     </section>
   </main>
 
@@ -84,7 +84,7 @@
       <div id="handoutEmpty" class="dropzone" tabindex="0">
         <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <strong>导入课件</strong>
-        <span>PPTX / PDF，可一次多选；按讲次排好顺序</span>
+        <span>PPTX / PPT / PDF，可一次多选；按讲次排好顺序</span>
       </div>
       <div id="docList" class="doc-list" hidden></div>
       <button id="resetBtn" class="ghost-btn reset-btn" hidden>换一套课件（清空当前课件库）</button>
@@ -213,12 +213,20 @@
   </div>
 </div>
 
+<div id="pagePeek" class="peek" hidden>
+  <div class="peek-head">
+    <span id="peekTitle">第 1 页</span>
+    <button id="peekClose" class="peek-x" title="关闭">×</button>
+  </div>
+  <div id="peekBody" class="peek-body"></div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
-<input id="filePicker" type="file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple hidden>
+<input id="filePicker" type="file" accept=".pptx,.ppt,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/octet-stream" multiple hidden>
 <input id="folderPicker" type="file" webkitdirectory multiple hidden>
 
-<script src="/static/math.js"></script>
-<script src="/static/md.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/math.js?v=2026-10-24-2"></script>
+<script src="/static/md.js?v=2026-10-24-2"></script>
+<script src="/static/app.js?v=2026-10-24-2"></script>
 </body>
 </html>

@@ -36,7 +36,7 @@ import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -222,6 +222,38 @@ class EventBus:
 # --------------------------------------------------------------------------
 
 
+def _find_passage(text: str, label: str) -> str:
+    """在页面文字里定位被引用的那一条，返回它周围的一小段。"""
+    body = " ".join((text or "").split())
+    if not body:
+        return ""
+    needle = " ".join(label.split())
+    idx = body.find(needle)
+    if idx == -1:
+        compact = needle.replace(" ", "")
+        probe = body.replace(" ", "")
+        pos = probe.find(compact)
+        if pos != -1:
+            ratio = len(body) / max(1, len(probe))
+            idx = int(pos * ratio)
+    if idx == -1:
+        return _page_excerpt(body)
+    begin = max(0, idx - 30)
+    stop = min(len(body), idx + 260)
+    chunk = body[begin:stop]
+    tail = body[stop:stop + 120]
+    for mark in ("。", "；"):
+        cut = tail.find(mark)
+        if cut != -1:
+            chunk += tail[:cut + 1]
+            break
+    return chunk.strip()
+
+
+def _page_excerpt(text: str) -> str:
+    body = " ".join((text or "").split())
+    return body[:300]
+
 def _looks_secret(text: str) -> bool:
     """Do not ship credentials to a model because someone pressed Ctrl+C."""
     t = text.strip()
@@ -246,6 +278,7 @@ class App:
         self.last_ping = time.time()
         self.exit_at = 0.0
         self._last_capture = (None, 0.0)
+        self.peek_cache = {}
         self.window_opened = False
         self.suppress_until = 0.0
         self._parse_thread = None
@@ -575,6 +608,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_settings()
             if route == "/api/page":
                 return self._handle_page()
+            if route == "/api/page/text":
+                return self._handle_page_text()
+            if route == "/api/page/peek":
+                return self._handle_page_peek()
             if route == "/api/handout":
                 return self._handle_handout_upload()
             if route == "/api/session/reset":
@@ -873,6 +910,170 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.settings["page"] = page
         self.app.store.save_settings()
         return self._send_json({"ok": True, "corpus": self.app.corpus_summary()})
+
+    def _handle_page_text(self):
+        """返回某一页的原文，供讲解里的页码预览用。"""
+        payload = self._json_body()
+        app = self.app
+        if app.has_corpus():
+            docs = app.store.corpus.get("docs") or []
+            doc_idx = int(payload.get("doc", app.store.doc) or 0)
+            doc_idx = max(0, min(doc_idx, len(docs) - 1))
+            try:
+                page = int(payload.get("page") or 1)
+            except Exception:
+                page = 1
+            page = max(1, min(page, corpus_mod.page_count(docs[doc_idx]) or 1))
+            doc = docs[doc_idx]
+            pages = doc.get("pages") or []
+            section = ""
+            for item in doc.get("outline") or []:
+                if item.get("page", 0) <= page:
+                    section = item.get("title") or section
+            name = doc.get("name") or ""
+        elif app.store.handout:
+            handout = app.store.handout
+            pages = handout.get("pages") or []
+            try:
+                page = int(payload.get("page") or 1)
+            except Exception:
+                page = 1
+            page = max(1, min(page, len(pages) or 1))
+            sec = handout_mod.section_at(handout, page) or {}
+            section = sec.get("title") or ""
+            name = handout.get("name") or ""
+            doc_idx = 0
+        else:
+            return self._send_json({"error": "还没有导入讲义"}, 400)
+
+        text = ""
+        if 0 <= page - 1 < len(pages):
+            text = (pages[page - 1].get("text") or "").strip()
+        return self._send_json({
+            "ok": True,
+            "doc": doc_idx,
+            "page": page,
+            "total": len(pages),
+            "name": name,
+            "section": section,
+            "text": text,
+        })
+
+    def _page_record(self, payload):
+        """把 (doc, page) 解析成这一页的原文与元信息；失败返回 (None, 错误)。"""
+        app = self.app
+        if app.has_corpus():
+            docs = app.store.corpus.get("docs") or []
+            doc_idx = int(payload.get("doc", app.store.doc) or 0)
+            doc_idx = max(0, min(doc_idx, len(docs) - 1))
+            try:
+                page = int(payload.get("page") or 1)
+            except Exception:
+                page = 1
+            page = max(1, min(page, corpus_mod.page_count(docs[doc_idx]) or 1))
+            doc = docs[doc_idx]
+            pages = doc.get("pages") or []
+            section = ""
+            for item in doc.get("outline") or []:
+                if item.get("page", 0) <= page:
+                    section = item.get("title") or section
+            name = doc.get("name") or ""
+        elif app.store.handout:
+            handout = app.store.handout
+            pages = handout.get("pages") or []
+            try:
+                page = int(payload.get("page") or 1)
+            except Exception:
+                page = 1
+            page = max(1, min(page, len(pages) or 1))
+            sec = handout_mod.section_at(handout, page) or {}
+            section = sec.get("title") or ""
+            name = handout.get("name") or ""
+            doc_idx = 0
+        else:
+            return None, "还没有导入讲义"
+
+        text = ""
+        if 0 <= page - 1 < len(pages):
+            text = (pages[page - 1].get("text") or "").strip()
+        return {
+            "doc": doc_idx, "page": page, "total": len(pages),
+            "name": name, "section": section, "text": text,
+        }, None
+
+    def _handle_page_peek(self):
+        """针对被引用的那一个知识点写一条小旁批（不展开、不追问）。"""
+        payload = self._json_body()
+        record, error = self._page_record(payload)
+        if record is None:
+            return self._send_json({"error": error}, 400)
+
+        label = (payload.get("label") or "").strip()[:40]
+        if not label and record.get("section"):
+            # 没写具体编号时，退而讲这一页所属的小节
+            label = record["section"][:40]
+        text = record["text"]
+        base = {
+            "ok": True, "doc": record["doc"], "page": record["page"],
+            "total": record["total"], "name": record["name"],
+            "section": record["section"], "label": label,
+            "note": "", "cached": False, "model": "",
+        }
+
+        focus = _find_passage(text, label) if label else _page_excerpt(text)
+        if not text:
+            base["note"] = "这一页没有提取到文字（可能是整页图片或扫描页）。"
+            return self._send_json(base)
+        if not focus:
+            base["note"] = "这一页里没找到「%s」，它可能定义在别的页。" % (label or "该知识点")
+            return self._send_json(base)
+
+        key = (record["doc"], record["page"], label,
+               hashlib.sha1(focus.encode("utf-8")).hexdigest()[:12])
+        cached = self.app.peek_cache.get(key)
+        if cached:
+            base.update(cached)
+            base["cached"] = True
+            return self._send_json(base)
+
+        settings = self.app.store.settings
+        if not settings.get("api_key"):
+            base["note"] = "填入 API Key 后，这里会自动写一条边注。"
+            return self._send_json(base)
+
+        system = (
+            "你在给讲义写一条边注（旁批）。读者刚在正文里看到引用，点开想知道这一条是什么。\n"
+            "要求：\n"
+            "1. 只讲被指定的那一个知识点，120-260 字；可以分 2-3 小段或几条项目符号。\n"
+            "2. 说清三件事：它是什么、为什么成立或为什么需要、在什么场合用得上。\n"
+            "3. 不展开证明，不举例，不给下一步，不写“如果你想可以……”。\n"
+            "4. 用 Markdown：要点用列表，术语可用 **加粗**；公式用 $...$，关键式子单独一行用 $$...$$。\n"
+            "5. 不要复述整段原文，不要客套。"
+        )
+        user = (
+            "知识点：%s\n页码：第 %d 页（%s）\n周围原文：\n%s"
+            % (label or "这一页的核心结论", record["page"],
+               record["section"] or record["name"] or "", focus[:1200])
+        )
+
+        try:
+            local = dict(settings)
+            local["max_tokens"] = 800
+            local["temperature"] = 0.3
+            res = llm.stream_chat(local, system, [
+                {"role": "user", "content": [{"type": "text", "text": user}]},
+            ])
+            note = (res.text or "").strip()
+        except Exception as exc:
+            base["note"] = "生成边注失败：%s" % exc
+            return self._send_json(base)
+
+        base["note"] = note
+        base["model"] = settings.get("model") or ""
+        if len(self.app.peek_cache) > 64:
+            self.app.peek_cache.clear()
+        self.app.peek_cache[key] = {"note": base["note"], "model": base["model"]}
+        return self._send_json(base)
 
     def _handle_handout_upload(self):
         name = self.headers.get("X-Filename") or "handout.pdf"

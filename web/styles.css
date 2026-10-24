@@ -1,3 +1,7 @@
+
+/* 作者样式里的 display 会盖掉浏览器默认的 [hidden]{display:none}，
+   这里统一兜底，任何 hidden 元素都必须消失。 */
+[hidden] { display: none !important; }
 /* 旁批 · 讲义伴读 — style sheet */
 
 :root {
@@ -1419,3 +1423,121 @@ hr { border: 0; border-top: 1px solid var(--line-soft); margin: 18px 0 12px; }
 .onboard-text span { font-size: 11.5px; color: var(--text-2); }
 .onboard-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .onboard-actions button { font-size: 11.5px; padding: 5px 10px; }
+
+
+/* 页码预览小窗 */
+.peek {
+  position: fixed;
+  z-index: 90;
+  width: min(350px, 90vw);
+  max-height: 52vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+}
+
+.peek-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.peek-x {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.peek-x:hover { background: var(--card-hi); color: var(--text); }
+
+.peek-body {
+  flex: 1 1 auto;
+  min-height: 0;          /* flex 子项默认不收缩，不写这行 overflow 不生效 */
+  padding: 4px 0 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--text-2);
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+/* 和整体风格一致的细滚动条 */
+.peek-body::-webkit-scrollbar { width: 8px; }
+.peek-body::-webkit-scrollbar-track { background: transparent; }
+.peek-body::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.peek-body::-webkit-scrollbar-thumb:hover { background: var(--accent-line); background-clip: padding-box; }
+
+.peek-text h2,
+.peek-text h3,
+.peek-text h4 {
+  font-family: var(--serif);
+  font-weight: 600;
+  color: var(--text);
+  margin: 10px 0 4px;
+}
+
+.peek-text h2 { font-size: 13.5px; }
+.peek-text h3 { font-size: 12.5px; }
+.peek-text h4 { font-size: 12px; }
+
+.peek-text ul,
+.peek-text ol { margin: 4px 0 6px; padding-left: 18px; }
+.peek-text li { margin-bottom: 2px; }
+.peek-text strong { color: var(--text); }
+
+.peek-foot {
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+}
+
+
+.peek-loading {
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.peek-sec { padding: 8px 14px; }
+.peek-sec + .peek-sec { border-top: 1px dashed var(--line); }
+
+.peek-label {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.peek-text {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--text-2);
+  word-break: break-word;
+}
+
+.peek-text .math.display { margin: 6px 0; }
+.peek-text p { margin: 0 0 6px; }
