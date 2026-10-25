@@ -62,6 +62,88 @@ def trim_runtime(src: str, dst: str) -> int:
     return total
 
 
+MAC_COMMAND = r"""#!/bin/bash
+# 旁批 · macOS 启动器：双击即可（第一次可能需要右键 → 打开）
+cd "$(dirname "$0")" || exit 1
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo ""
+  echo "  找不到 python3。"
+  echo "  请先在终端运行：  xcode-select --install"
+  echo "  装完再双击我。"
+  echo ""
+  read -n 1 -s -r -p "按任意键退出"
+  exit 1
+fi
+
+mkdir -p data
+export PYTHONUTF8=1
+exec python3 "_internal/app/server.py" --data-dir "$PWD/data" "$@"
+"""
+
+
+def build_mac(zip_it=True):
+    """macOS 包：源码 + .command 启动器，不打包 Python（用系统的 python3）。"""
+    out = os.path.join(DIST, NAME + "-mac")
+    shutil.rmtree(out, ignore_errors=True)
+    os.makedirs(out, exist_ok=True)
+    internal = os.path.join(out, "_internal")
+    os.makedirs(internal, exist_ok=True)
+
+    copytree(os.path.join(ROOT, "app"), os.path.join(internal, "app"),
+             ignore=lambda d, names: {n for n in names if n in ("__pycache__", ".pytest_cache")})
+    copytree(os.path.join(ROOT, "web"), os.path.join(internal, "web"),
+             ignore=lambda d, names: {n for n in names if n == "tests"})
+    copytree(os.path.join(ROOT, "samples"), os.path.join(internal, "samples"), ignore=None)
+
+    guide = os.path.join(ROOT, "使用说明.md")
+    if os.path.exists(guide):
+        shutil.copy2(guide, os.path.join(out, "使用说明.md"))
+    for doc in ("README.md", "LICENSE", "CHANGELOG.md"):
+        src_doc = os.path.join(ROOT, doc)
+        if os.path.exists(src_doc):
+            shutil.copy2(src_doc, os.path.join(internal, doc))
+
+    command = os.path.join(out, "旁批.command")
+    with open(command, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(MAC_COMMAND)
+
+    total = 0
+    for root, _d, files in os.walk(out):
+        for f in files:
+            total += os.path.getsize(os.path.join(root, f))
+    print("mac bundle size:", human(total))
+
+    if zip_it:
+        stamp = time.strftime("%Y%m%d")
+        zpath = os.path.join(DIST, "%s-mac-%s.zip" % (NAME, stamp))
+        make_zip(out, zpath, executables={"旁批.command"}, prefix=os.path.basename(out))
+        print("zip:", zpath, human(os.path.getsize(zpath)))
+        return zpath
+    return out
+
+
+def make_zip(root: str, zpath: str, executables=None, prefix=None):
+    """自己写 zip：Windows 上 shutil 写不出 unix 执行位，macOS 解压后 .command 会不能用。"""
+    import zipfile
+
+    executables = executables or set()
+    base = os.path.abspath(root)
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as zf:
+        for folder, dirs, files in os.walk(base):
+            dirs.sort()
+            for name in sorted(files):
+                full = os.path.join(folder, name)
+                rel = os.path.relpath(full, base).replace(os.sep, "/")
+                info = zipfile.ZipInfo((prefix + "/" + rel) if prefix else rel)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                mode = 0o755 if rel in executables else 0o644
+                info.external_attr = (0o100000 | mode) << 16
+                info.create_system = 3  # unix，解压时才会认这个权限位
+                with open(full, "rb") as fh:
+                    zf.writestr(info, fh.read())
+
+
 def write_launchers(dst: str):
     """顶层只放一个启动器；程序本体都在 _internal\\ 里。"""
     internal = os.path.join(dst, "_internal")
@@ -204,9 +286,13 @@ def build(zip_it=True, runtime_src=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runtime", default=None, help="source python distribution directory")
+    ap.add_argument("--target", default="win", choices=["win", "mac", "both"], help="which bundle to build")
     ap.add_argument("--no-zip", action="store_true")
     args = ap.parse_args()
-    build(zip_it=not args.no_zip, runtime_src=args.runtime)
+    if args.target in ("win", "both"):
+        build(zip_it=not args.no_zip, runtime_src=args.runtime)
+    if args.target in ("mac", "both"):
+        build_mac(zip_it=not args.no_zip)
     return 0
 
 

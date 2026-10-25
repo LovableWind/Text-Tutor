@@ -1,5 +1,19 @@
 # 更新日志
 
+## v2.0.0（2026-10-25）
+
+### 新增
+
+- **macOS 支持**：新增 `app/macos.py` 后端，用系统命令实现剪贴板读写（`pbpaste`/`pbcopy`，截图走 `-Prefer png`，TIFF 自动转 PNG）、`Cmd+C` 取词（AppleScript）、Chrome 应用窗口、屏幕尺寸。`server.py` 按 `sys.platform` 自动切换后端，其余代码一行没改。
+- **macOS 包**：`旁批.command` 启动器（zip 里带 unix 执行位，解压即可双击），不打包 Python，改用系统 `python3`。体积 0.2 MB。
+- 新增 `tests/test_mac.py`。
+
+### 差异（写进说明书的）
+
+- 没有全局热键：需要额外的辅助工具，不引入；用 `Cmd+C` 代替。
+- 窗口不能置顶：Chrome 应用窗口在 macOS 上没有这个接口。
+- 自动取词需要「辅助功能」授权，没授权时静默不生效，手动 `Cmd+C` 照常可用。
+
 ## v1.3.0（2026-10-25）
 
 ### 新增

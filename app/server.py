@@ -34,9 +34,12 @@ import formula  # noqa: E402
 import guard  # noqa: E402
 import llm  # noqa: E402
 import prompts  # noqa: E402
-import win32  # noqa: E402
+if sys.platform == "darwin":
+    import macos as win32  # noqa: E402
+else:
+    import win32  # noqa: E402
 
-VERSION = "1.3.0"
+VERSION = "2.0.0"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
