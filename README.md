@@ -6,7 +6,7 @@
 
 [![Windows下载](https://img.shields.io/badge/⬇_下载_Windows_便携版-10_MB-d99a5b?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/LovableWind/Text-Tutor/releases/latest/download/Pangpi-v2.0.0-portable-win64.zip)
 [![macOS下载](https://img.shields.io/badge/⬇_下载_macOS_版-0.24_MB-d99a5b?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/LovableWind/Text-Tutor/releases/latest/download/Pangpi-v2.0.0-macos.zip)
-[![版本](https://img.shields.io/github/v/release/LovableWind/Text-Tutor?color=d99a5b&label=version)](https://github.com/LovableWind/Text-Tutor/releases) [![平台](https://img.shields.io/badge/platform-Windows_10_%2F_11-555555)](https://github.com/LovableWind/Text-Tutor/releases/latest)
+[![版本](https://img.shields.io/github/v/release/LovableWind/Text-Tutor?color=d99a5b&label=version)](https://github.com/LovableWind/Text-Tutor/releases) 
 
 <img src="web/icon-256.png" width="96" align="right" alt="旁批图标">
 
