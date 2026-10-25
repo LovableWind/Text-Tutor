@@ -251,6 +251,29 @@ def main():
                                   json.dumps({"page": 2, "label": "定理 1.4"}).encode(), H).read())
         check("peek caches repeats", res2.get("cached") is True, res2.get("cached"))
 
+        # 9a3. records: tag a card, list, export, delete
+        records = json.loads(request(base + "/api/records", headers=H).read())
+        check("records start empty", records.get("records") == [], records)
+        made = json.loads(request(base + "/api/record/add", "POST", json.dumps({
+            "card_id": "card-test-1", "text": "定理 1.4 单调有界数列必有极限。",
+            "answer": "单调有界则收敛。", "doc": 0, "page": 2,
+        }).encode(), H).read())
+        check("record created", bool(made.get("record", {}).get("id")), made)
+        dup = json.loads(request(base + "/api/record/add", "POST", json.dumps({
+            "card_id": "card-test-1", "text": "x", "answer": "y",
+        }).encode(), H).read())
+        check("same card not duplicated", dup.get("exists") is True, dup)
+        listing = json.loads(request(base + "/api/records", headers=H).read())
+        check("record listed", len(listing.get("records") or []) == 1, listing)
+        rid = (listing["records"][0]["id"])
+        exported = json.loads(request(base + "/api/records/export", "POST",
+                                      json.dumps({"ids": [rid]}).encode(), H).read())
+        check("export returns markdown", "旁批记录" in (exported.get("markdown") or ""), exported.get("markdown", "")[:40])
+        check("export counts", exported.get("count") == 1, exported.get("count"))
+        removed = json.loads(request(base + "/api/records/delete", "POST",
+                                     json.dumps({"ids": [rid]}).encode(), H).read())
+        check("record deleted", removed.get("removed") == 1, removed)
+
         # 9b. the guide page and the "new set of handouts" reset
         guide = request(base + "/guide").read().decode("utf-8")
         check("guide page served", "使用说明" in guide or "旁批" in guide, len(guide))

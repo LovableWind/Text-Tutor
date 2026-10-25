@@ -36,7 +36,7 @@ import llm  # noqa: E402
 import prompts  # noqa: E402
 import win32  # noqa: E402
 
-VERSION = "1.2.2"
+VERSION = "1.3.0"
 APP_TITLE = "旁批"
 
 DEFAULT_SETTINGS = {
@@ -84,6 +84,7 @@ class Store:
         self.handout_path = os.path.join(root, "handout.json")
         self.cards_path = os.path.join(root, "cards.json")
         self.corpus_path = os.path.join(root, "corpus.json")
+        self.records_path = os.path.join(root, "records.json")
         self.img_dir = os.path.join(root, "img")
         os.makedirs(self.img_dir, exist_ok=True)
         self.lock = threading.RLock()
@@ -91,9 +92,30 @@ class Store:
         self.handout = handout_mod.load_handout(self.handout_path)
         self.corpus = corpus_mod.load(self.corpus_path) or corpus_mod.new_corpus()
         self.cards = self._load_cards()
+        self.records = self._load_records()
         self.page = int(self.settings.get("page") or 1)
         self.doc = int(self.settings.get("doc") or 0)
         self.handout_status = {"state": "ready" if self.handout else "none", "progress": 0, "message": ""}
+
+    # -- records ----------------------------------------------------------
+    def _load_records(self) -> list:
+        if os.path.exists(self.records_path):
+            try:
+                with open(self.records_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                    return data if isinstance(data, list) else []
+            except Exception:
+                pass
+        return []
+
+    def save_records(self):
+        with self.lock:
+            tmp = self.records_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self.records, fh, ensure_ascii=False, indent=1)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, self.records_path)
 
     # -- settings ---------------------------------------------------------
     def _load_settings(self) -> dict:
@@ -220,6 +242,35 @@ class EventBus:
 # --------------------------------------------------------------------------
 # app state
 # --------------------------------------------------------------------------
+
+
+def _split_record(raw: str):
+    """把【标题】【要点】【注意】拆成 (标题, Markdown 正文)。"""
+    title = ""
+    body_lines = []
+    current = None
+    for line in (raw or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("【标题】"):
+            title = stripped[4:].strip()
+            current = "title"
+            continue
+        if stripped.startswith("【要点】"):
+            current = "body"
+            rest = stripped[4:].strip()
+            if rest:
+                body_lines.append(rest)
+            continue
+        if stripped.startswith("【注意】"):
+            current = "note"
+            rest = stripped[4:].strip()
+            body_lines.append("")
+            body_lines.append("**注意**：" + rest)
+            continue
+        if current in ("body", "note"):
+            body_lines.append(line)
+    body = "\n".join(body_lines).strip()
+    return title, body
 
 
 def _find_passage(text: str, label: str) -> str:
@@ -569,6 +620,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._handle_events()
             if self.path_only == "/api/corpus":
                 return self._send_json(self.app.corpus_summary())
+            if self.path_only == "/api/records":
+                return self._handle_records()
             if self.path_only == "/api/handout/status":
                 return self._send_json(self.app.store.handout_status)
             if self.path_only == "/api/handout/outline":
@@ -632,6 +685,14 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self._json_body()
                 self.app.store.delete_card(payload.get("id") or "")
                 return self._send_json({"ok": True})
+            if route == "/api/records":
+                return self._handle_records()
+            if route == "/api/record/add":
+                return self._handle_record_add()
+            if route == "/api/records/delete":
+                return self._handle_records_delete()
+            if route == "/api/records/export":
+                return self._handle_records_export()
             if route == "/api/card/patch":
                 payload = self._json_body()
                 card = self.app.store.update_card(payload.get("id") or "", **{
@@ -910,6 +971,98 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.settings["page"] = page
         self.app.store.save_settings()
         return self._send_json({"ok": True, "corpus": self.app.corpus_summary()})
+
+    def _handle_records(self):
+        with self.app.store.lock:
+            records = list(self.app.store.records)
+        records.sort(key=lambda r: r.get("ts") or 0, reverse=True)
+        return self._send_json({"ok": True, "records": records})
+
+    def _handle_record_add(self):
+        payload = self._json_body()
+        card_id = (payload.get("card_id") or "").strip()
+        selection = (payload.get("text") or "").strip()
+        answer = (payload.get("answer") or "").strip()
+        doc = int(payload.get("doc") or 0)
+        page = int(payload.get("page") or 1)
+        if not selection and not answer:
+            return self._send_json({"error": "这张卡片没有内容可以记录"}, 400)
+
+        with self.app.store.lock:
+            for rec in self.app.store.records:
+                if card_id and rec.get("card_id") == card_id:
+                    return self._send_json({"ok": True, "record": rec, "exists": True})
+
+        settings = self.app.store.settings
+        title, body = "", ""
+        if settings.get("api_key"):
+            system = (
+                "你在帮学生把刚才的讲解整理成一条可复习的记录。\n"
+                "按这个格式输出，不要别的内容：\n"
+                "【标题】一句话，不超过 20 字，说清这是什么知识点\n"
+                "【要点】2-4 条 Markdown 列表，每条一句话；有公式用 $...$，关键式子单独一行 $$...$$\n"
+                "【注意】可选，最多一条，写容易搞错的地方"
+            )
+            user = "选中的原文：\n%s\n\n刚才的讲解：\n%s" % (selection[:800], answer[:2500])
+            try:
+                local = dict(settings)
+                local["max_tokens"] = 600
+                local["temperature"] = 0.3
+                res = llm.stream_chat(local, system, [
+                    {"role": "user", "content": [{"type": "text", "text": user}]},
+                ])
+                raw = (res.text or "").strip()
+                title, body = _split_record(raw)
+            except Exception as exc:
+                return self._send_json({"error": "生成记录失败：%s" % exc}, 400)
+
+        if not title:
+            title = (selection or "未命名")[:20]
+        if not body:
+            body = answer[:600] or selection[:300]
+
+        record = {
+            "id": uuid.uuid4().hex[:10],
+            "ts": time.time(),
+            "card_id": card_id,
+            "title": title,
+            "body": body,
+            "doc": doc,
+            "page": page,
+            "source": selection[:400],
+        }
+        with self.app.store.lock:
+            self.app.store.records.append(record)
+            self.app.store.save_records()
+        return self._send_json({"ok": True, "record": record})
+
+    def _handle_records_delete(self):
+        ids = set(self._json_body().get("ids") or [])
+        with self.app.store.lock:
+            before = len(self.app.store.records)
+            self.app.store.records = [r for r in self.app.store.records if r.get("id") not in ids]
+            removed = before - len(self.app.store.records)
+            self.app.store.save_records()
+        return self._send_json({"ok": True, "removed": removed})
+
+    def _handle_records_export(self):
+        ids = self._json_body().get("ids") or []
+        with self.app.store.lock:
+            chosen = [r for r in self.app.store.records if not ids or r.get("id") in ids]
+        chosen.sort(key=lambda r: r.get("ts") or 0)
+        parts = ["# 旁批记录", "", "导出于 %s，共 %d 条。" % (time.strftime("%Y-%m-%d %H:%M"), len(chosen)), ""]
+        for index, rec in enumerate(chosen, 1):
+            head = "## %d. %s" % (index, rec.get("title") or "未命名")
+            if rec.get("page"):
+                head += "（第 %d 页）" % rec["page"]
+            parts.append(head)
+            parts.append("")
+            parts.append(rec.get("body") or "")
+            parts.append("")
+            if rec.get("source"):
+                parts.append("> 原文：%s" % " ".join(rec["source"].split())[:200])
+                parts.append("")
+        return self._send_json({"ok": True, "markdown": "\n".join(parts), "count": len(chosen)})
 
     def _handle_page_text(self):
         """返回某一页的原文，供讲解里的页码预览用。"""

@@ -7,9 +7,9 @@
 <link rel="shortcut icon" href="/favicon.ico?v=3">
 <link rel="icon" type="image/png" href="/icon-256.png?v=3">
 <link rel="apple-touch-icon" href="/icon-256.png?v=3">
-<meta name="pangbi-ui" content="2026-10-24-2">
+<meta name="pangbi-ui" content="2026-10-25-1">
 <title>旁批 · 讲义伴读</title>
-<link rel="stylesheet" href="/static/styles.css?v=2026-10-24-2">
+<link rel="stylesheet" href="/static/styles.css?v=2026-10-25-1">
 </head>
 <body>
 <div id="app">
@@ -73,6 +73,7 @@
   <div class="panel-head">
     <div class="panel-tabs">
       <button class="tab active" data-tab="handout">讲义</button>
+      <button class="tab" data-tab="records">记录</button>
       <button class="tab" data-tab="settings">设置</button>
     </div>
     <button id="panelClose" class="icon-btn" title="关闭">
@@ -109,6 +110,16 @@
       </div>
       <nav id="outline" class="outline"></nav>
       <button id="reindexBtn" class="ghost-btn" hidden>重新建立索引</button>
+    </section>
+
+    <section id="tab-records" class="tabpane">
+      <p class="help">标了「记录」的讲解会由模型整理成复习笔记，可以挑着导出成 Markdown。</p>
+      <div id="recordList" class="record-list"></div>
+      <div class="btn-row record-actions" id="recordActions" hidden>
+        <button id="recordAll" class="ghost-btn">全选</button>
+        <button id="recordExport" class="primary-btn">导出所选</button>
+        <button id="recordDelete" class="ghost-btn danger">删除所选</button>
+      </div>
     </section>
 
     <section id="tab-settings" class="tabpane">
@@ -225,8 +236,8 @@
 <input id="filePicker" type="file" accept=".pptx,.ppt,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/octet-stream" multiple hidden>
 <input id="folderPicker" type="file" webkitdirectory multiple hidden>
 
-<script src="/static/math.js?v=2026-10-24-2"></script>
-<script src="/static/md.js?v=2026-10-24-2"></script>
-<script src="/static/app.js?v=2026-10-24-2"></script>
+<script src="/static/math.js?v=2026-10-25-1"></script>
+<script src="/static/md.js?v=2026-10-25-1"></script>
+<script src="/static/app.js?v=2026-10-25-1"></script>
 </body>
 </html>

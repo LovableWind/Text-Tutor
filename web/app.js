@@ -22,6 +22,8 @@
     els: new Map(),        // card id -> element
     streaming: new Map(),  // temp id -> {buf, el, timer}
     lastCapture: { text: "", at: 0 },
+    records: [],
+    tagged: new Set(),
     uploadTimer: null
   };
 
@@ -575,12 +577,130 @@
     if (card.mode === "solution") {
       bar.appendChild(button("换个说法", "", () => redo(card)));
     }
+    const tagged = S.tagged.has(card.id);
+    bar.appendChild(button(tagged ? "已记录 ✓" : "记录", tagged ? "primary" : "", () => toggleRecord(card)));
     bar.appendChild(button("追问", "", () => openAsk(card)));
     bar.appendChild(button("复制", "", () => copyCard(card)));
     const del = button("删除", "danger", () => removeCard(card));
     del.style.marginLeft = "auto";
     bar.appendChild(del);
     return bar;
+  }
+
+  // ---------------------------------------------------------------- 记录
+  async function loadRecords() {
+    try {
+      const res = await api("/api/records");
+      S.records = res.records || [];
+      S.tagged = new Set(S.records.map((r) => r.card_id).filter(Boolean));
+      renderRecords();
+    } catch (err) { /* 记录加载失败不影响主流程 */ }
+  }
+
+  async function toggleRecord(card) {
+    const existing = S.records.find((r) => r.card_id === card.id);
+    try {
+      if (existing) {
+        await api("/api/records/delete", { method: "POST", body: { ids: [existing.id] } });
+        S.records = S.records.filter((r) => r.id !== existing.id);
+        S.tagged.delete(card.id);
+        toast("已取消记录");
+      } else {
+        toast("正在整理这条记录…");
+        const res = await api("/api/record/add", {
+          method: "POST",
+          body: {
+            card_id: card.id,
+            text: card.selection || "",
+            answer: card.answer || "",
+            doc: card.doc || 0,
+            page: card.page || S.page,
+          },
+        });
+        if (res.record) {
+          S.records.unshift(res.record);
+          S.tagged.add(card.id);
+          toast("已加入记录：" + (res.record.title || ""));
+        }
+      }
+      renderRecords();
+      renderFeed();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  function renderRecords() {
+    const list = $("#recordList");
+    const bar = $("#recordActions");
+    if (!list) return;
+    if (!S.records.length) {
+      list.innerHTML = '<p class="help">还没有记录。讲解卡片底部点「记录」就会存一条。</p>';
+      if (bar) bar.hidden = true;
+      return;
+    }
+    if (bar) bar.hidden = false;
+    list.innerHTML = "";
+    for (const rec of S.records) {
+      const row = document.createElement("label");
+      row.className = "record-item";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = rec.id;
+      box.className = "record-check";
+      const main = document.createElement("div");
+      main.className = "record-main";
+      const head = document.createElement("div");
+      head.className = "record-title";
+      head.textContent = rec.title || "未命名";
+      const meta = document.createElement("div");
+      meta.className = "record-meta";
+      const when = new Date((rec.ts || 0) * 1000);
+      meta.textContent = "第 " + (rec.page || 1) + " 页 · " + when.toLocaleDateString("zh-CN");
+      main.appendChild(head);
+      main.appendChild(meta);
+      row.appendChild(box);
+      row.appendChild(main);
+      list.appendChild(row);
+    }
+  }
+
+  function selectedRecordIds() {
+    return $$(".record-check").filter((el) => el.checked).map((el) => el.value);
+  }
+
+  async function exportRecords() {
+    const ids = selectedRecordIds();
+    if (!ids.length) { toast("先勾选要导出的记录", "error"); return; }
+    try {
+      const res = await api("/api/records/export", { method: "POST", body: { ids } });
+      const blob = new Blob([res.markdown || ""], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "旁批记录-" + new Date().toISOString().slice(0, 10) + ".md";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      toast("已导出 " + res.count + " 条");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function deleteRecords() {
+    const ids = selectedRecordIds();
+    if (!ids.length) { toast("先勾选要删除的记录", "error"); return; }
+    if (!confirm("删除选中的 " + ids.length + " 条记录？")) return;
+    try {
+      await api("/api/records/delete", { method: "POST", body: { ids } });
+      await loadRecords();
+      renderFeed();
+      toast("已删除");
+    } catch (err) {
+      toast(err.message, "error");
+    }
   }
 
   function setSelfCheck(el, text, kind) {
@@ -1206,6 +1326,7 @@
   }
 
   function selectTab(tab) {
+    if (tab === "records") loadRecords();
     for (const t of $$(".tab")) t.classList.toggle("active", t.dataset.tab === tab);
     for (const p of $$(".tabpane")) p.classList.toggle("active", p.id === "tab-" + tab);
   }
@@ -1279,6 +1400,7 @@
     fillSettings();
     updateThinkBtn();
     updateOnboard();
+    loadRecords();
   }
 
   // ---------------------------------------------------------------- events
@@ -1328,7 +1450,7 @@
     return el;
   }
 
-  const UI_VERSION = "2026-10-24-2";
+  const UI_VERSION = "2026-10-25-1";
 
   function checkUIVersion() {
     const meta = document.querySelector('meta[name="pangbi-ui"]');
@@ -1359,6 +1481,13 @@
   function wire() {
     on("#settingsBtn", "click", () => openPanel("settings"));
     on("#peekClose", "click", closePeek);
+    on("#recordExport", "click", exportRecords);
+    on("#recordDelete", "click", deleteRecords);
+    on("#recordAll", "click", () => {
+      const boxes = $$(".record-check");
+      const all = boxes.every((el) => el.checked);
+      boxes.forEach((el) => { el.checked = !all; });
+    });
     on("#onboardKey", "click", () => openPanel("settings"));
     on("#onboardDeck", "click", () => openPanel("handout"));
     on("#helpBtn", "click", () => showWelcome(true));
